@@ -1,0 +1,1040 @@
+defaults:
+  model: gpt-4o
+  temperature: 1
+
+target_sets:
+  Summary:
+    - OE_Summary
+    - Code_Summary
+    - Roadmap_Summary
+  OE_and_Code:
+    - OE_Summary
+    - Code_Summary
+  project_deep:
+    - Proj_의사결정및설계근거
+    - Proj_문제해결및최적화
+    - Proj_기술적서사및흐름
+    - Proj_성과및수치
+  데이터요약:
+    - 정제
+    - AI_대화_로드맵
+patterns:
+  OE_Summary:
+    output_suffix: "_OE_Summary.md"
+    use_subject_prefix: true
+    system_role: "You are a Senior Technical Writer. You create a 'Detailed Architecture Guidebook' with rich context."
+    prompt_template: |
+      [Context Data]
+      {context}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      1. **Mandatory Tagging**: Callout 제목에 `■ 태그명` 필수 포함.
+      2. **Text Inside Box**: 모든 설명과 리스트는 Callout(`>`) 내부에 작성.
+      3. **No Code Blocks**: 코드는 절대 넣지 말고, **글로 풀어서 설명**하거나 **파일 링크**로 대체.
+      4. **Detailed Description**: 각 파일에 대해 **2~3문장의 상세 설명**을 작성할 것.
+      5. **Full Reference**: `→ [[파일명]]` 링크 필수.
+
+      ---
+      [💾 출력 가이드]
+      - 파일명: `[주제]_OE_Summary.md`
+      - **Callout 매핑**:
+        - 시스템 개요 → `> [!ABSTRACT] ■ 시스템 개요`
+        - 상세 구성 및 파일 → `> [!INFO] ■ 구성 요소 상세`
+        - 로직 흐름(글) → `> [!LOGIC-FLOW] ■ 동작 메커니즘`
+        - 설계 의도 → `> [!RATIONALE] ■ 설계 의도`
+
+      ---
+      [🚨 MISSION: DETAILED GUIDEBOOK]
+      이 문서는 코드를 보지 않고도 시스템을 이해할 수 있는 **상세 해설서**입니다.
+      단순한 나열을 넘어, 각 파일이 **무슨 역할을 하며, 어떤 방식으로 구현되어 있는지 3줄 내외로 서술**하십시오.
+
+      [출력 템플릿 예시]
+
+      # 📘 {subject} 시스템 기술 명세서
+
+      ## 📍 1. 시스템 아키텍처 개요
+
+      > [!ABSTRACT] ■ 시스템 개요
+      > - 이 시스템은 **대용량 로그의 실시간 정제 및 적재**를 담당합니다.
+      > - 확장성을 위해 수집(Collector)과 정제(Cleaner) 모듈이 느슨하게 결합(Loose Coupling)되어 있습니다.
+      > - 모든 데이터 흐름은 추적 가능하도록 고유 ID를 기반으로 로깅됩니다.
+
+      ---
+
+      ## ⚙️ 2. 모듈별 상세 명세 (Component Specs)
+
+      ### 2.1 [주제 1: 데이터 수집기 (Collector)]
+
+      > [!LOGIC-FLOW] ■ 동작 메커니즘
+      > - 스케줄러가 1분마다 트리거를 발생시키면, API 클라이언트가 외부 서버에 요청을 보냅니다.
+      > - 응답받은 JSON 데이터의 유효성을 1차 검증하고, 실패 시 지수 백오프(Exponential Backoff)로 재시도합니다.
+
+      > [!INFO] ■ 구성 요소 상세
+      > - **Collector Core**: 스케줄링 및 전체 수집 파이프라인을 제어하는 메인 컨트롤러입니다. 에러 발생 시 알림을 보내는 로직이 포함되어 있습니다. → [[collector_main.py]]
+      > - **API Client**: 외부 REST API와의 통신을 전담하는 래퍼(Wrapper) 클래스입니다. `requests` 라이브러리를 사용하여 타임아웃과 헤더 처리를 캡슐화했습니다. → [[api_client.py]]
+      > - **Auth Manager**: OAuth2 인증 토큰을 관리합니다. 토큰 만료 시 자동으로 갱신(Refresh)하여 끊김 없는 연결을 보장합니다. → [[auth.py]]
+
+      ### 2.2 [주제 2: 데이터 정제 엔진 (Cleaner)]
+
+      > [!RATIONALE] ■ 설계 의도
+      > - 정제 규칙은 비즈니스 요건에 따라 자주 변경되므로, 코드가 아닌 **설정 파일(YAML)**로 분리했습니다.
+      > - 이를 통해 개발자의 개입 없이도 운영팀에서 규칙을 수정할 수 있습니다.
+
+      > [!INFO] ■ 구성 요소 상세
+      > - **Cleaner Engine**: 설정된 규칙에 따라 텍스트의 특수문자를 제거하고 형식을 통일합니다. 정규표현식을 컴파일하여 처리 속도를 최적화했습니다. → [[cleaner.py]]
+      > - **Schema Validator**: 데이터가 DB 적재 스키마와 일치하는지 검사합니다. 필수 필드 누락이나 타입 불일치를 사전에 차단하는 방어막 역할을 합니다. → [[validator.py]]
+      > - **Rule Config**: 필터링할 키워드와 치환 규칙이 정의된 설정 파일입니다. 우선순위에 따라 순차적으로 적용됩니다. → [[rules.yaml]]
+
+      ---
+
+      ## 🔮 3. 참조 및 유틸리티
+
+      > [!INFO] ■ 공통 모듈
+      > - **Global Logger**: 시스템 전역에서 사용되는 로깅 설정을 정의합니다. 콘솔 출력과 동시에 파일로 로테이션 저장되도록 구성되었습니다. → [[logger.py]]
+      > - **Utils**: 날짜 변환, 문자열 처리 등 여러 모듈에서 재사용되는 헬퍼 함수들의 집합입니다. → [[common_utils.py]]
+      
+
+  Code_Summary:
+    output_suffix: "_Code_Summary.md"
+    use_subject_prefix: true
+    system_role: "You are a Senior Code Librarian. You create a 'Navigational Map' for the codebase."
+    prompt_template: |
+      [Context Data]
+      {context}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      (이 규칙은 문서의 기능성(검색/복사)을 위해 절대적입니다.)
+
+      1. **Mandatory Tagging (태깅 필수)**:
+         - 모든 Callout의 제목에는 지정된 태그(`■ 태그명`)를 반드시 포함하십시오.
+
+      2. **Content Segregation (내용 분리)**:
+         - **리스트/텍스트**: Callout **내부**에 작성하십시오. (모든 줄에 `>` 접두사 사용)
+         - **코드/로그**: 필요하다면 Callout **외부**에 작성하십시오. (이 문서에서는 주로 리스트가 사용됨)
+
+      3. **One-Line Definition (한 줄 정의)**:
+         - 복잡한 설명 금지. 기능은 무조건 **한 줄**로 요약하십시오.
+         - 형식: `**함수/클래스명**: (한 줄 설명) → [[원본파일]]`
+
+      ---
+      [💾 파일 및 출력 가이드]
+      1. 추천 파일명: `[주제]_Code_Summary.md`
+      2. **Callout 매핑**:
+         - 파일/모듈 구조 → `> [!INFO] ■ 디렉토리 구조`
+         - 핵심 기능 인덱스 → `> [!CODE] ■ 코드 인덱스`
+         - 유틸리티/기타 → `> [!ABSTRACT] ■ 유틸리티 모음`
+
+      ---
+      [🚨 MISSION: CODE MAP & INDEX]
+      분석하지 말고 **나열(List)**하십시오.
+      이 문서는 **"어떤 기능이 어떤 파일에 있는지"** 찾는 지도입니다.
+      입력된 모든 코드 파일에서 **주요 클래스, 함수, 상수**를 추출하여 원본 링크와 함께 정리하십시오.
+
+      [출력 템플릿 예시]
+
+      # 🗺️ {subject} 코드 내비게이션 맵
+
+      ## 📍 1. 전체 파일 구조 (File Structure)
+      *(입력된 파일들의 목록)*
+
+      > [!INFO] ■ 디렉토리 구조
+      > - **Main Logic**: `main.py`, `processor.py`
+      > - **Utils**: `helper.py`, `converter.py`
+      > - **Config**: `config.yaml`, `settings.py`
+
+      ---
+
+      ## 📍 2. 핵심 로직 인덱스 (Core Logic)
+      *(주요 비즈니스 로직을 담당하는 코드들)*
+
+      > [!CODE] ■ 코드 인덱스
+      > - **`ProcessHandler` (Class)**: 데이터 전처리 및 파이프라인 총괄 → [[processor.py]]
+      > - **`run_inference` (Func)**: 모델 추론을 실행하고 결과를 반환함 → [[main.py]]
+      > - **`load_model` (Func)**: ONNX 모델을 메모리에 로드함 → [[loader.py]]
+
+      ---
+
+      ## 📍 3. 유틸리티 및 헬퍼 (Utils)
+      *(보조적인 기능을 수행하는 코드들)*
+
+      > [!ABSTRACT] ■ 유틸리티 모음
+      > - **`clean_text` (Func)**: 특수문자 제거 및 정규화 수행 → [[helper.py]]
+      > - **`save_json` (Func)**: 딕셔너리를 JSON 파일로 안전하게 저장 → [[io_utils.py]]
+      > - **`DATE_FMT` (Const)**: 날짜 포맷 상수 (`%Y-%m-%d`) → [[config.py]]
+
+      ---
+
+      ## 🔗 4. 참조 연결
+      - **전체 원본 파일**:
+        - [[processor.py]]
+        - [[main.py]]
+        - [[helper.py]]
+
+  Roadmap_Summary:
+    output_suffix: "_Roadmap.md"
+    use_subject_prefix: true
+    system_role: "You are a Technical Historian. You document the 'Evolutionary Context' of the project in detail."
+    prompt_template: |
+
+      [Context Data]
+      {context}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      1. **Mandatory Tagging**: Callout 제목에 `■ 태그명` 필수.
+      2. **Text Inside Box**: 모든 설명은 `>` 박스 내부 작성.
+      3. **No Code Dump**: 코드는 넣지 말고, **상세한 작업 내역(글)**과 **파일 링크**로 대체.
+      4. **Detailed Description**: 각 파일에 대해 **무엇을, 왜, 어떻게 구현했는지 3줄 내외로 서술**.
+      5. **Full Reference**: `→ [[파일명]]` 링크 필수.
+
+      ---
+      [💾 출력 가이드]
+      - 파일명: `[주제]_Roadmap.md`
+      - **Callout 매핑**:
+        - 단계 목표 → `> [!ABSTRACT] ■ 단계 목표`
+        - 상세 작업 내역 → `> [!LOGIC-FLOW] ■ 상세 작업 내역 및 산출물`
+        - 연결 고리(Why) → `> [!RATIONALE] ■ 다음 단계로의 연결`
+
+      ---
+      [🚨 MISSION: DETAILED HISTORY]
+      각 단계(Phase)에서 **어떤 사고 과정을 거쳐 파일들이 만들어졌는지** 상세히 기록하십시오.
+      파일명 옆에 단순히 기능만 적지 말고, **구현 방식과 의도를 포함하여 3줄 내외로 설명**하십시오.
+
+      [출력 템플릿 예시]
+
+      # 🗺️ {subject} 프로젝트 상세 로드맵
+
+      ## 🎯 1. 전체 여정 요약
+
+      | 단계 | 핵심 목표 | 주요 산출물 |
+      | :--- | :--- | :--- |
+      | Phase 1 | MVP 구축 | [[main.py]], [[core.py]] |
+      | Phase 2 | 안정성 강화 | [[exceptions.py]] |
+
+      ---
+
+      ## 🧭 2. 단계별 진화 과정 (Evolution)
+
+      ### 🟢 Phase 1. [기반 구조 설계 및 MVP]
+
+      > [!ABSTRACT] ■ 단계 목표
+      > 프로젝트의 디렉토리 구조를 확립하고, 핵심 비즈니스 로직인 '데이터 수집' 기능을 최소 기능 제품(MVP) 형태로 구현했습니다.
+
+      > [!LOGIC-FLOW] ■ 상세 작업 내역 및 산출물
+      > - **기본 설정 관리**: 하드코딩을 피하기 위해 환경 변수와 상수를 관리하는 모듈을 생성했습니다. `dotenv`를 사용하여 보안 키를 분리했습니다. → [[config.py]]
+      > - **데이터 모델링**: 수집할 데이터의 스키마를 정의하고, Pydantic을 활용하여 타입 안정성을 확보했습니다. 이를 통해 잘못된 데이터 유입을 초기에 차단합니다. → [[models.py]]
+      > - **메인 로직 구현**: CLI 명령어로 실행 가능한 엔트리포인트를 작성했습니다. `argparse`를 통해 사용자가 옵션을 쉽게 조절할 수 있도록 했습니다. → [[main.py]]
+
+      > [!RATIONALE] ■ 다음 단계로의 연결
+      > - 핵심 기능은 동작하지만, 예외 상황(네트워크 단절 등)에 대한 처리가 미흡하여 프로그램이 자주 종료됨.
+      > - 따라서 다음 단계는 **견고한 에러 핸들링과 로깅 시스템** 구축에 집중하기로 함.
+
+      ### 🟡 Phase 2. [안정성 강화 및 모듈화]
+
+      > [!ABSTRACT] ■ 단계 목표
+      > 스파게티 코드가 되지 않도록 기능을 모듈 단위로 분리하고, 예상치 못한 에러에도 시스템이 멈추지 않도록 안정성을 보강했습니다.
+
+      > [!LOGIC-FLOW] ■ 상세 작업 내역 및 산출물
+      > - **커스텀 예외 정의**: 시스템에서 발생할 수 있는 에러를 비즈니스 로직별로 세분화했습니다. 이를 통해 에러 발생 시 원인을 즉시 파악할 수 있게 되었습니다. → [[exceptions.py]]
+      > - **로깅 시스템 구축**: 콘솔 출력뿐만 아니라 파일로 로그를 남기도록 설정했습니다. 날짜별로 로그가 로테이션되도록 하여 디스크 용량을 관리합니다. → [[logger.py]]
+      > - **유틸리티 분리**: 여러 곳에서 중복 사용되던 날짜 변환 및 문자열 처리 함수들을 별도 파일로 모았습니다. 코드 재사용성이 크게 향상되었습니다. → [[utils.py]]
+
+      ---
+
+      ## 🔮 3. 현재 상태 및 Future Work
+      - **Current**: v1.0 배포 완료. (안정성 테스트 통과)
+      - **Next**: 사용자 피드백을 반영하여 **웹 대시보드 연동** 기능 개발 예정. → [[web_server.py]] (Todo)
+      
+
+  Hybrid_Spec:
+    output_suffix: "_TechBlueprint.md"
+    use_subject_prefix: true
+    system_role: "You are a CTO & Chief Architect. You document both the 'Current Technical Specification' and the 'Evolutionary Decision History'."
+    prompt_template: |
+      
+      [Context Data]
+      {context}
+      
+      [🔥 CRITICAL FORMATTING RULES]
+      (이 규칙은 문서의 기능성(검색/복사)을 위해 절대적입니다.)
+      
+      1. **Mandatory Tagging (태깅 필수)**:
+         - 모든 Callout의 제목에는 지정된 태그(`■ 태그명`)를 반드시 포함하십시오.
+         - 예: `> [!RATIONALE] ■ 판단 근거`
+      
+      2. **Content Segregation (내용 분리 정책 - 중요)**:
+         - **텍스트/리스트**: Callout **내부**에 작성하십시오. (모든 줄에 `>` 접두사 사용)
+         - **코드/로그/표**: Callout **외부(바로 아랫줄)**에 작성하십시오. (`>` 접두사 금지)
+      
+      3. **Visual Structure (작성 예시)**:
+         반드시 아래 패턴을 따르십시오.
+         
+         ✅ **[올바른 예시: 텍스트는 안(In), 코드는 밖(Out)]**
+         > [!LOGIC-FLOW] ■ 동작 흐름
+         > - 아래 코드는 데이터를 정규화하는 로직입니다. (텍스트는 박스 안)
+         
+         ```python
+         # 코드는 박스 밖 (깨끗한 상태, 복사 용이)
+         def clean_data(data):
+             return data.strip()
+         ```
+         
+         ❌ **[틀린 예시: 코드를 박스에 넣음]**
+         > [!LOGIC-FLOW] ■ 동작 흐름
+         > ```python
+         > # 이렇게 하면 복사할 때 >가 같이 복사됨 (금지)
+         > ```
+      
+      4. **Whitespace Enforcement (여백 강제)**:
+         - Callout이 끝나고 코드/표가 시작되기 전에는 **반드시 빈 줄(Empty Line)**을 하나 두어 렌더링 오류를 방지하십시오.
+      
+      ---
+      [💾 콘텐츠 매핑 및 가이드]
+      1. 추천 파일명: `[주제]_TechBlueprint.md`
+      
+      2. **섹션별 Callout 매핑 (혼합 모델)**:
+       - [Spec] 기술 개요/정의 → `> [!ABSTRACT] ■ 기술 원리`
+       - [Roadmap] 결정의 근거 → `> [!RATIONALE] ■ 판단 근거`
+       - [Roadmap] 대안 비교 → `> [!TRADE-OFF] ■ 대안 비교`
+       - [Spec] 동작/구현 흐름 → `> [!LOGIC-FLOW] ■ 동작 흐름`
+       - [Common] 주의/위험 → `> [!PITFALL] ■ 주의사항`
+      
+      ---
+      [🚨 MISSION: THE "WHY" & "HOW" INTEGRATION]
+      이 문서는 현재 시스템이 **"무엇(Spec)"**이고, **"왜(Why)"** 그렇게 되었는지를 동시에 설명해야 합니다.
+      각 챕터마다 **[기술 정의] -> [의사결정 배경] -> [실제 구현]** 순서로 서술하십시오.
+      
+      [출력 템플릿 예시 (포맷 엄수)]
+      
+      # 🏗️ {subject} 아키텍처 블루프린트 (Hybrid)
+      
+      ## 🎯 1. 시스템 오버뷰 (System Anchor)
+      *(현재 상태와 핵심 변경 사항을 요약)*
+      
+      | 모듈명 | 현재 상태 (As-Is) | 핵심 결정 요인 |
+      | :--- | :--- | :--- |
+      | **Vector DB** | ChromaDB (Local) | 메타데이터 필터링 강점 |
+      | **Embedding** | BGE-M3 | 한국어/영어 동시 지원 |
+      
+      ---
+      
+      ## ⚙️ 2. 상세 기술 및 의사결정 (Deep Dive)
+      
+      ### 2.1 [주제 1: 예 - 데이터 파이프라인]
+      
+      #### A. 기술 정의 및 현황 (What)
+      > [!ABSTRACT] ■ 기술 원리
+      > - 비정형 데이터(PDF/HWP)를 Markdown으로 변환 후 청킹(Chunking)하는 파이프라인.
+      > - 현재 **Airflow**를 사용하여 배치 단위로 처리 중임.
+      
+      #### B. 의사결정 이력 (Why)
+      > [!RATIONALE] ■ 판단 근거
+      > - **배치 처리 도입**: 실시간 처리는 API 비용 과다 발생.
+      > - **포맷 통일**: LLM 학습 효율을 위해 모든 소스를 Markdown으로 정규화함.
+      >
+      > (빈 줄도 > 필수 포함)
+      
+      > [!TRADE-OFF] ■ 대안 비교
+      > - **대안 A (LangChain Loader)**:
+      >   - 구현은 쉽지만 표(Table) 처리가 미흡함.
+      > - **대안 B (Custom Parser)**:
+      >   - **[최종 선택]** 초기 비용은 높으나 데이터 정합성 99% 달성.
+      
+      #### C. 구현 로직 (How)
+      > [!LOGIC-FLOW] ■ 동작 흐름
+       ```python
+       # 코드 블록 내부도 > 접두사 필수
+       def process_pipeline(file):
+           text = parse_to_md(file)
+           chunks = split_by_token(text, limit=500)
+           return chunks
+       ```
+      
+      ---
+      
+      ### 2.2 [주제 2: 예 - 검색 품질 최적화]
+      
+      > [!ABSTRACT] ■ 기술 원리
+      > - 단순 코사인 유사도 외에 **Hybrid Search(키워드+벡터)** 방식을 적용함.
+      
+      > [!PITFALL] ■ 주의사항
+      > - **Re-ranking 지연**: Cross-Encoder 사용 시 검색 속도가 0.5초 느려짐.
+      > - **해결책**: 캐싱(Caching) 레이어 추가.
+      
+      ---
+      
+      ## 🔮 3. 향후 발전 계획 (Next Steps)
+      - **v2.0**: 멀티 모달(이미지) 검색 지원 예정.
+      - **v2.1**: 사용자 피드백 루프(RLHF) 구축.
+
+  Proj_의사결정및설계근거:
+    output_suffix: "_Proj_의사결정.md"
+    use_subject_prefix: true
+    system_role: "You are a Principal Software Architect. You create 'Searchable Technical Decision Records' acting as a strict renderer."
+    prompt_template: |
+      [Context Data]
+      {context}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      (문서의 가독성과 검색을 위해 아래 규칙을 엄격히 준수하십시오.)
+      1. **Mandatory Tagging**: Callout 제목에 `■ 태그명` 필수.
+      2. **Content Segregation**: 설명(In), 표/코드(Out).
+      3. **Full Reference**: 관련 코드는 `→ [[파일명]]`으로 링크.
+      4. **Detailed Reasoning**: 선택의 이유를 제약조건(비용, 시간, 리소스)과 결부시켜 3줄 이상 서술.
+
+      ---
+      [💾 출력 가이드]
+      - 파일명: `[주제]_의사결정.md`
+      - **Callout 매핑**:
+        - 설계 철학/요약 → `> [!ABSTRACT] ■ 핵심 요약`
+        - 대안 비교 분석 → `> [!TRADE-OFF] ■ 대안 비교 해설`
+        - 판단 근거 → `> [!RATIONALE] ■ 판단 근거`
+        - 통찰/회고 → `> [!LIGHTBULB] ■ Architect's Insight`
+
+      ---
+      [🚨 MISSION: FACTS & CONSTRAINTS]
+      1. **Facts Only**: 원문에 없는 내용을 형식 채우기용으로 지어내지 마십시오.
+      2. **Constraint Explicit**: 이 결정을 강제한 **'제약 조건(비용, 메모리, 시간 등)'**을 반드시 명시하십시오.
+      3. **Context**: 단순한 A vs B가 아니라, **"당시 상황에서 왜 그 선택이 최선이었는지"**를 파일 단위로 기록하십시오.
+
+      [출력 템플릿 예시]
+
+      # 🏗️ Architecture Decision Record: {subject}
+
+      ## 🎯 1. 의사결정 앵커 (Decision Anchor)
+      *(핵심 결정을 요약한 테이블 - 박스 외부)*
+
+      | 문제 (Problem) | 선택 (Choice) | 핵심 이유 (Why) |
+      | :--- | :--- | :--- |
+      | DB 커넥션 고갈 | Connection Pool | 대기 시간 90% 단축 |
+
+      ---
+
+      ## 📍 2. 시스템 설계 개요
+
+      > [!ABSTRACT] ■ 핵심 요약
+      > - **설계 철학**: "완벽함보다는 속도". 초기 시장 진입을 위해 확장성 일부를 희생하고 개발 속도를 우선했습니다.
+      > - **핵심 제약**: 서버 비용을 월 $50 이내로 맞춰야 했기에 Managed DB 대신 Docker 컨테이너를 선택했습니다.
+
+      ## 💡 3. 주요 의사결정 (Critical Decisions)
+
+      ### 3.1 [결정 주제]
+      **문제 상황**: (직면했던 이슈와 파일 위치) → [[db_config.py]]
+
+      > [!TRADE-OFF] ■ 대안 비교 해설
+      > - **대안 A (MySQL)**: 트랜잭션은 강력하지만 스키마 변경 시 다운타임이 발생함.
+      > - **대안 B (PostgreSQL)**: JSONB 타입 지원으로 유연성 확보 가능.
+
+      *(표는 박스 밖)*
+      | 선택지 | 장점 | 단점 | 선택 |
+      | :--- | :--- | :--- | :---: |
+      | MySQL | 익숙함 | 스키마 경직성 | ❌ |
+      | PostgreSQL | JSON지원, 확장성 | 설정 복잡 | ✅ |
+
+      > [!RATIONALE] ■ 판단 근거
+      > - **기술적 적합성**: 로그 데이터의 필드가 수시로 변하는 요구사항 때문에 JSONB 인덱싱이 필수적이었습니다.
+      > - **비용 효율**: 오픈소스로 라이선스 비용이 없으며, 기존 팀원들이 SQL에 익숙하여 러닝커브를 최소화했습니다.
+      > - **구현체**: 실제 연결 로직은 `db_conn.py`에 싱글톤 패턴으로 구현되었습니다. → [[db_conn.py]]
+
+      ## 🔗 4. 아키텍처적 통찰
+
+      > [!LIGHTBULB] ■ Architect's Insight
+      > - 이 결정으로 인해 데이터 구조 변경 요청에 대한 대응 시간이 1일에서 1시간으로 단축되었습니다.
+      > - 단, 향후 데이터가 1TB를 넘어가면 샤딩(Sharding) 도입을 고려해야 합니다.
+
+  Proj_문제해결및최적화:
+    output_suffix: "_Proj_문제해결.md"
+    use_subject_prefix: true
+    system_role: "You are a Senior Debugging Expert. You create a 'Troubleshooting Guide' linking errors to fixes."
+    prompt_template: |
+      [Context Data]
+      {context}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      1. **Mandatory Tagging**: Callout 제목에 `■ 태그명` 필수.
+      2. **Content Segregation**: 설명(In), 로그/코드(Out).
+      3. **Full Reference**: 수정된 파일 `→ [[파일명]]` 링크.
+      4. **Detailed Analysis**: 원인과 해결 과정을 상세히 서술.
+
+      ---
+      [💾 출력 가이드]
+      - 증상/로그 → `> [!WARNING] ■ 증상 및 로그`
+      - 원인 분석 → `> [!RATIONALE] ■ 원인 상세`
+      - 해결 방안 → `> [!CODE] ■ 해결 방안 및 패치`
+      - 회고 → `> [!LIGHTBULB] ■ Post-Mortem`
+
+      ---
+      [🚨 MISSION: LOG PRESERVATION & LOGIC]
+      1. **Log Preservation**: 에러 메시지, 에러 코드, 이상 수치는 **요약하지 말고 원문 그대로** 박제하십시오. (검색 매칭 핵심)
+      2. **Logical Flow**: 증상 -> 가설 -> 검증 -> 해결의 서사를 유지하십시오.
+      3. **Diff Check**: 코드 수정 전(Before)과 후(After)의 차이를 명확히 보여주십시오.
+
+      [출력 템플릿 예시]
+
+      # 🛠️ Troubleshooter: {subject}
+
+      ## 🎯 1. 트러블슈팅 앵커
+
+      | 이슈 | 원인 | 해결 | 수정 파일 |
+      | :--- | :--- | :--- | :--- |
+      | OOM | 메모리 누수 | 배치 축소 | [[train.py]] |
+
+      ---
+
+      ## 🔍 2. 현상 및 로그
+
+      > [!WARNING] ■ 증상 및 로그
+      > - 학습 시작 10분 후 `CUDA out of memory` 발생하며 프로세스 킬.
+      > - GPU 모니터링 시 VRAM 사용량이 선형적으로 증가함.
+
+      *(로그 원문 - 박스 밖)*
+      ```text
+      RuntimeError: CUDA out of memory. Tried to allocate 128.00 MiB (GPU 0; 24.00 GiB total capacity; 23.10 GiB already allocated...)
+      ```
+
+      ## 💡 3. 해결 과정
+
+      > [!RATIONALE] ■ 원인 상세
+      > - **가설**: `loss.backward()` 호출 시 계산 그래프가 누적되고 있다고 판단했습니다.
+      > - **검증**: `loss.item()` 대신 `loss` 객체 자체를 리스트에 append 하고 있어 그래프가 해제되지 않았음이 확인되었습니다.
+      > - **위치**: `trainer.py`의 142번째 라인. → [[trainer.py]]
+
+      ### 💻 Final Fix
+
+      > [!CODE] ■ 해결 방안 및 패치
+      > - 누적되는 loss 값을 텐서가 아닌 Python float 값으로 변환하여 저장하도록 수정했습니다.
+      > - `loss` -> `loss.item()` 변경.
+
+      *(코드 - 박스 밖)*
+      ```python
+      # [Before] 메모리 누수 발생
+      total_loss.append(loss)
+
+      # [After] 수정됨
+      total_loss.append(loss.item())
+      ```
+
+      ## 🔗 4. 회고 및 방지책
+
+      > [!LIGHTBULB] ■ Post-Mortem
+      > - **근본 원인**: PyTorch의 Computational Graph 유지 메커니즘에 대한 이해 부족.
+      > - **재발 방지**: 코드 리뷰 체크리스트에 'Loop 내 텐서 저장 금지' 항목 추가함.
+
+  Proj_기술적서사및흐름:
+    output_suffix: "_Proj_서사.md"
+    use_subject_prefix: true
+    system_role: "You are a Technical Program Manager. You create a 'Development Narrative Map'."
+    prompt_template: |
+      [Context Data]
+      {context}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      1. **Mandatory Tagging**: Callout 제목에 `■ 태그명` 필수.
+      2. **Content Segregation**: 텍스트(In), 표(Out).
+      3. **Full Reference**: 관련 파일 `→ [[파일명]]` 링크.
+      4. **Storytelling**: 단계 간 인과관계 필수 서술.
+
+      ---
+      [💾 출력 가이드]
+      - 개발 흐름 → `> [!LOGIC-FLOW] ■ 개발 흐름 및 산출물`
+      - 연결 고리 → `> [!RATIONALE] ■ Technical Bridge`
+      - 터닝 포인트 → `> [!LIGHTBULB] ■ Critical Pivot`
+
+      ---
+      [🚨 MISSION: CAUSAL LINK & NARRATIVE]
+      1. **Phase Mapping**: 개발 과정을 기-승-전-결의 단계(Phase)로 구조화하십시오.
+      2. **Causal Link**: 단순 나열이 아니라, **"이 단계가 완료되었기에 다음 단계가 필요했다"**는 기술적 필연성을 설명하십시오.
+
+      [출력 템플릿 예시]
+
+      # 🗺️ Project Narrative: {subject}
+
+      ## 🎯 1. 서사 앵커
+      *(전체 흐름 요약)*
+
+      | 단계 | 핵심 과제 | 주요 산출물 |
+      | :--- | :--- | :--- |
+      | Phase 1 | 데이터 수집 | [[crawler.py]] |
+      | Phase 2 | 전처리 | [[cleaner.py]] |
+
+      ---
+
+      ## 🏗️ 2. 단계별 심층 서사
+
+      ### 🟢 Phase 1. [데이터 파이프라인 구축]
+
+      > [!LOGIC-FLOW] ■ 개발 흐름 및 산출물
+      > - **목표**: 초기 학습을 위한 Raw Data 10GB 확보.
+      > - **활동**: Python `requests`와 `BeautifulSoup`을 사용하여 정적 페이지 크롤러를 구현했습니다. → [[crawler_v1.py]]
+      > - **저장**: 수집된 데이터를 S3에 적재하는 유틸리티를 작성했습니다. → [[s3_uploader.py]]
+
+      > [!RATIONALE] ■ Technical Bridge (Why Next?)
+      > - 데이터 수집은 성공했으나, **HTML 태그와 자바스크립트 코드**가 섞여 있어 학습에 바로 사용할 수 없었습니다.
+      > - 이에 따라, 단순 수집을 넘어선 **"정교한 정제 파이프라인"**의 필요성이 대두되었습니다.
+
+      ### 🟡 Phase 2. [데이터 정제 및 품질 확보]
+
+      > [!LOGIC-FLOW] ■ 개발 흐름 및 산출물
+      > - **도전**: 중복 데이터와 비표준 인코딩 문제 해결.
+      > - **해결**: `pandas`를 이용한 중복 제거 로직과 인코딩 정규화 모듈을 개발했습니다. → [[cleaner.py]]
+
+      ## 💡 3. 프로젝트 터닝 포인트
+
+      > [!LIGHTBULB] ■ Critical Pivot
+      > - **사건**: 정제 속도가 너무 느려 하루에 1GB 처리도 버거움.
+      > - **전환**: 단일 스레드 처리에서 `multiprocessing`을 이용한 병렬 처리로 아키텍처 변경. → [[parallel_cleaner.py]]
+
+  Proj_성과및수치:
+    output_suffix: "_Proj_성과.md"
+    use_subject_prefix: true
+    system_role: "You are a Performance Engineer. You create a 'Benchmark Context Report'."
+    prompt_template: |
+      [Context Data]
+      {context}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      1. **Mandatory Tagging**: Callout 제목에 `■ 태그명` 필수.
+      2. **Content Segregation**: 설명(In), 표/코드(Out).
+      3. **Full Reference**: 측정 스크립트/설정 `→ [[파일명]]` 링크.
+      4. **Contextual**: 수치와 함께 측정 환경을 상세히 기록.
+
+      ---
+      [💾 출력 가이드]
+      - 성과 요약 → `> [!ABSTRACT] ■ 성과 요약`
+      - 환경 정보 → `> [!INFO] ■ Evaluation Environment`
+      - 최적화 상세 → `> [!LOGIC-FLOW] ■ 최적화 과정`
+      - 가치 → `> [!TIP] ■ Business Impact`
+
+      ---
+      [🚨 MISSION: NUMBERS & CONTEXT]
+      1. **Compare & Contrast**: 단순 수치 나열보다 **Before vs After (개선폭)**를 명시하십시오.
+      2. **Contextual Metrics**: 수치가 도출된 **환경(HW/SW)과 사용된 스크립트**를 반드시 함께 기록하여 재현 가능하게 하십시오.
+
+      [출력 템플릿 예시]
+
+      # 📈 Performance Spec-Sheet: {subject}
+
+      ## 🎯 1. 성과 앵커
+
+      | 지표 | Before | After | 개선율 |
+      | :--- | :---: | :---: | :---: |
+      | mAP | 0.50 | 0.60 | +20% |
+      | FPS | 30 | 60 | +100% |
+
+      ---
+
+      ## 📍 2. 핵심 성과 상세
+
+      > [!ABSTRACT] ■ 성과 요약
+      > - **대표 성과**: 모델 경량화를 통해 모바일 기기에서도 실시간 추론(30fps)이 가능해졌습니다.
+      > - **데이터 규모**: 학습 10만 장, 평가 1만 장 (COCO 포맷). → [[dataset_info.md]]
+
+      ## 📊 3. 상세 벤치마크
+
+      **[Model Performance]**
+      *(표는 박스 밖)*
+      | Class | Precision | Recall |
+      | :--- | :--- | :--- |
+      | Person | 0.90 | 0.88 |
+
+      > [!INFO] ■ Evaluation Environment
+      > - **Hardware**: NVIDIA Tesla T4 (Google Colab)
+      > - **Software**: PyTorch 1.13, CUDA 11.2
+      > - **Script**: `eval.py` 스크립트의 `--mode fast` 옵션으로 측정. → [[eval.py]]
+
+      ## 🚀 4. 최적화 성과
+
+      > [!LOGIC-FLOW] ■ 최적화 과정
+      > - **병목 지점**: 추론 시 이미지 전처리(Resize, Normalize)가 CPU 병목을 유발함.
+      > - **적용 기술**: `Albumentations` 라이브러리 대신 GPU 가속이 지원되는 `Kornia`로 교체. → [[transforms.py]]
+      > - **최종 결과**: 전처리 시간 10ms -> 2ms 단축.
+
+      > [!TIP] ■ Business Impact
+      > - 클라우드 GPU 인스턴스 등급을 낮출 수 있어 **월 서버 비용 40% 절감** 효과.
+
+  표준 코드패턴:
+    output_suffix: "_표준코드패턴.md"
+    use_subject_prefix: false
+    system_role: "You are a Senior Software Engineer creating a 'Plug-and-Play' code library. You act as a 'Strict Markdown Renderer'."
+    prompt_template: |
+      [Context Data]
+      {context}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      (이 규칙은 문서의 기능성(검색/복사)을 위해 절대적입니다.)
+      
+      1. **Mandatory Tagging (태깅 필수)**:
+         - 모든 Callout의 제목에는 지정된 태그(`■ 태그명`)를 반드시 포함하십시오.
+         - 예: `> [!RATIONALE] ■ 판단 근거`
+      
+      2. **Content Segregation (내용 분리 정책 - 중요)**:
+         - **텍스트/리스트**: Callout **내부**에 작성하십시오. (모든 줄에 `>` 접두사 사용)
+         - **코드/로그/표**: Callout **외부(바로 아랫줄)**에 작성하십시오. (`>` 접두사 금지)
+      
+      3. **Visual Structure (작성 예시)**:
+         반드시 아래 패턴을 따르십시오.
+         
+         ✅ **[올바른 예시: 텍스트는 안(In), 코드는 밖(Out)]**
+         > [!LOGIC-FLOW] ■ 동작 흐름
+         > - 아래 코드는 데이터를 정규화하는 로직입니다. (텍스트는 박스 안)
+         
+         ```python
+         # 코드는 박스 밖 (깨끗한 상태, 복사 용이)
+         def clean_data(data):
+             return data.strip()
+         ```
+         
+         ❌ **[틀린 예시: 코드를 박스에 넣음]**
+         > [!LOGIC-FLOW] ■ 동작 흐름
+         > ```python
+         > # 이렇게 하면 복사할 때 >가 같이 복사됨 (금지)
+         > ```
+      
+      4. **Whitespace Enforcement (여백 강제)**:
+         - Callout이 끝나고 코드/표가 시작되기 전에는 **반드시 빈 줄(Empty Line)**을 하나 두어 렌더링 오류를 방지하십시오.
+
+      ---
+      [💾 파일 및 출력 가이드]
+      1. 추천 파일명: `[주제]_코드패턴.md`
+      2. **Callout 매핑**:
+         - 패턴 사용처 → `> [!ABSTRACT] ■ Use Case`
+         - 실행 코드 → `> [!CODE] ■ 표준 패턴`
+         - 수정 포인트 → `> [!TIP] ■ Custom Point`
+
+      ---
+      [🚨 MISSION: PLUG-AND-PLAY]
+      복사해서 바로 쓸 수 있는 **독립적인(Standalone)** 코드를 작성하십시오.
+      - 필요한 `import` 포함.
+      - 수정해야 할 부분은 `# TODO:` 주석 처리.
+      - `try-except` 및 `Type Hint` 필수.
+
+      [출력 템플릿 예시]
+
+      # {subject} 표준 코드 패턴 라이브러리
+
+      ## 📋 패턴 인덱스
+      | ID | 패턴명 | Use Case |
+      | :--- | :--- | :--- |
+      | 1.1 | Safe File Loader | 파일 읽기 예외 처리 |
+
+      ---
+
+      ## 1. [카테고리명]
+
+      ### 1.1. [패턴명]
+
+      > [!ABSTRACT] ■ Use Case
+      > - 대용량 CSV 파일을 청크(Chunk) 단위로 끊어서 로드할 때 사용.
+      > - 메모리 오버플로우(OOM) 방지 목적.
+
+      > [!CODE] ■ 표준 패턴
+      > ```python
+      > import os
+      > import pandas as pd
+      > from typing import Iterator
+      > 
+      > # 독립 실행 가능하도록 import 포함
+      > def load_csv_chunked(
+      >     file_path: str,  # TODO: 파일 경로 수정
+      >     chunk_size: int = 1000
+      > ) -> Iterator[pd.DataFrame]:
+      >     """
+      >     Generator 함수입니다.
+      >     """
+      >     if not os.path.exists(file_path):
+      >         raise FileNotFoundError(f"Path not found: {file_path}")
+      > 
+      >     try:
+      >         # 모든 줄 앞에 > 필수
+      >         reader = pd.read_csv(file_path, chunksize=chunk_size)
+      >         for chunk in reader:
+      >             yield chunk
+      >     except Exception as e:
+      >         print(f"Error: {e}")
+      > ```
+
+      > [!TIP] ■ Custom Point
+      > - **`chunk_size`**: 메모리가 16GB 이하라면 5000 이하로 낮추십시오.
+      > - **`encoding`**: 한글 파일의 경우 `cp949` 또는 `euc-kr`로 변경 필요.
+
+  정제:
+    output_suffix: "_정제.md"
+    use_subject_prefix: true
+    system_role: "You are a Personal Knowledge Manager optimizing for 'Review Efficiency'. You act as a 'Strict Markdown Renderer'."
+    prompt_template: |
+      [Context Data]
+      - Transcript: {transcript}
+      - User_Study_Notes: {user_notes}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      (이 규칙은 문서의 기능성(검색/복사)을 위해 절대적입니다.)
+      
+      1. **Mandatory Tagging (태깅 필수)**:
+         - 모든 Callout의 제목에는 지정된 태그(`■ 태그명`)를 반드시 포함하십시오.
+         - 예: `> [!RATIONALE] ■ 판단 근거`
+      
+      2. **Content Segregation (내용 분리 정책 - 중요)**:
+         - **텍스트/리스트**: Callout **내부**에 작성하십시오. (모든 줄에 `>` 접두사 사용)
+         - **코드/로그/표**: Callout **외부(바로 아랫줄)**에 작성하십시오. (`>` 접두사 금지)
+      
+      3. **Visual Structure (작성 예시)**:
+         반드시 아래 패턴을 따르십시오.
+         
+         ✅ **[올바른 예시: 텍스트는 안(In), 코드는 밖(Out)]**
+         > [!LOGIC-FLOW] ■ 동작 흐름
+         > - 아래 코드는 데이터를 정규화하는 로직입니다. (텍스트는 박스 안)
+         
+         ```python
+         # 코드는 박스 밖 (깨끗한 상태, 복사 용이)
+         def clean_data(data):
+             return data.strip()
+         ```
+         
+         ❌ **[틀린 예시: 코드를 박스에 넣음]**
+         > [!LOGIC-FLOW] ■ 동작 흐름
+         > ```python
+         > # 이렇게 하면 복사할 때 >가 같이 복사됨 (금지)
+         > ```
+      
+      4. **Whitespace Enforcement (여백 강제)**:
+         - Callout이 끝나고 코드/표가 시작되기 전에는 **반드시 빈 줄(Empty Line)**을 하나 두어 렌더링 오류를 방지하십시오.
+      ---
+      [💾 출력 가이드]
+      - 추천 파일명: `[주제]_정제.md`
+      - **Callout 매핑**:
+        - 3분 요약 → `> [!ABSTRACT] ■ 3분 요약`
+        - 사용자 노트/인사이트 → `> [!NOTE] ■ User Insight`
+        - 교수님 강조/오개념 → `> [!WARNING] ■ 교수님 강조 / 오개념 주의`
+        - 원리/동작 흐름 → `> [!LOGIC-FLOW] ■ 동작 흐름`
+
+      ---
+      [🚨 MISSION: 3-MINUTE REVIEW]
+      "내가 놓친 부분"과 "핵심 인사이트"를 중심으로 재구성하십시오. 시간순이 아닌 **논리적 순서(개념->원리->심화)**로 배열하십시오.
+
+      [출력 템플릿 예시]
+
+      # 💎 {subject}: 핵심 지식 정제
+
+      ## 📋 3분 요약 (Executive Summary)
+
+      > [!ABSTRACT] ■ 3분 요약
+      > - **핵심 메시지**: (전체를 관통하는 한 문장)
+      > - **내가 배운 것**: (사용자 노트 기반 핵심 3가지)
+      > - **💡 놓친 포인트**: (노트엔 없었지만 강의에서 중요했던 내용 - **필독**)
+
+      ## 1. [주제명]
+
+      > **정의**: (가장 직관적인 정의)
+
+      | 강의 내용 (Standard) | 내 노트 (My View) |
+      | :--- | :--- |
+      | (교수님의 설명) | (나의 비유/이해) |
+
+      > [!LOGIC-FLOW] ■ 동작 흐름
+      > - 데이터가 입력되면 Encoder를 거쳐 Latent Vector가 됨.
+
+      > [!NOTE] ■ User Insight
+      > - (내 노트에서 추출한 핵심 메모)
+      > - 이 부분은 회사 프로젝트 A와 연결될 수 있음.
+
+      > [!WARNING] ■ 교수님 강조 / 오개념 주의
+      > - **오개념**: RNN은 병렬 처리가 된다? -> **NO**, 순차 처리임.
+      > - **강조**: Gradient Vanishing 문제를 해결한 것이 LSTM임.
+
+      ## 2. [심화 주제 / 실전 적용]
+
+      > [!TIP] ■ 주의사항 (실무 적용)
+      > - 배치 정규화(Batch Norm)는 Train/Test 모드가 다르게 동작함.
+
+      ## 🔗 연결 지식
+      - **관련 개념**: [[...]]
+
+  AI_대화_로드맵:
+    output_suffix: "_로드맵.md"
+    use_subject_prefix: true
+    system_role: "You are a Senior Lead Systems Architect specializing in Sequential Logic Archiving. You act as a 'Strict Markdown Renderer'."
+    prompt_template: |
+      [Context Data]
+      {transcript} (AI와의 대화 기록)
+
+      [🔥 CRITICAL FORMATTING RULES]
+      (이 규칙은 문서의 기능성(검색/복사)을 위해 절대적입니다.)
+      
+      1. **Mandatory Tagging (태깅 필수)**:
+         - 모든 Callout의 제목에는 지정된 태그(`■ 태그명`)를 반드시 포함하십시오.
+         - 예: `> [!RATIONALE] ■ 판단 근거`
+      
+      2. **Content Segregation (내용 분리 정책 - 중요)**:
+         - **텍스트/리스트**: Callout **내부**에 작성하십시오. (모든 줄에 `>` 접두사 사용)
+         - **코드/로그/표**: Callout **외부(바로 아랫줄)**에 작성하십시오. (`>` 접두사 금지)
+      
+      3. **Visual Structure (작성 예시)**:
+         반드시 아래 패턴을 따르십시오.
+         
+         ✅ **[올바른 예시: 텍스트는 안(In), 코드는 밖(Out)]**
+         > [!LOGIC-FLOW] ■ 동작 흐름
+         > - 아래 코드는 데이터를 정규화하는 로직입니다. (텍스트는 박스 안)
+         
+         ```python
+         # 코드는 박스 밖 (깨끗한 상태, 복사 용이)
+         def clean_data(data):
+             return data.strip()
+         ```
+         
+         ❌ **[틀린 예시: 코드를 박스에 넣음]**
+         > [!LOGIC-FLOW] ■ 동작 흐름
+         > ```python
+         > # 이렇게 하면 복사할 때 >가 같이 복사됨 (금지)
+         > ```
+      
+      4. **Whitespace Enforcement (여백 강제)**:
+         - Callout이 끝나고 코드/표가 시작되기 전에는 **반드시 빈 줄(Empty Line)**을 하나 두어 렌더링 오류를 방지하십시오.
+
+      ---
+      [💾 출력 가이드]
+      - 추천 파일명: `[주제]_로드맵.md`
+      - **Callout 매핑**:
+        - 기술 원리 → `> [!ABSTRACT] ■ Technical Principle`
+        - 동작 흐름 → `> [!LOGIC-FLOW] ■ 동작 흐름`
+        - 판단 근거 → `> [!RATIONALE] ■ 판단 근거`
+        - 대안 비교 → `> [!TRADE-OFF] ■ 대안 비교`
+        - 인사이트 → `> [!LIGHTBULB] ■ Aha! Moment`
+        - 구현 코드 → `> [!CODE] ■ Production Code`
+
+      ---
+      [🚨 MISSION: LOGIC CHAIN]
+      단순 요약이 아닌 **'기술적 의사결정의 흐름'**을 박제하십시오. "이전의 문제 -> 현재의 해결 -> 미래의 이점"을 연결하십시오.
+
+      [출력 템플릿 예시]
+
+      # 💎 {subject} 기술 명세 및 로직 로드맵
+
+      ## 📍 추천 파일명: 01_Study_[순번]_{subject}_로드맵.md
+
+      ### 🧭 1. 연결된 맥락 (The Bridge)
+      - **From Previous**: (이전 단계의 한계점)
+      - **Current Goal**: (구조적 변환 목표)
+
+      ### 💡 2. 개념 및 원리 심층 분석
+
+      > [!ABSTRACT] ■ Technical Principle
+      > - **구조적 변환**: 계층적 폴더 구조를 COCO JSON 포맷으로 평탄화(Flattening).
+
+      > [!TRADE-OFF] ■ 대안 비교 (의사결정 매트릭스)
+      > | 대안 | 장점 | 단점 | 선택 |
+      > | :--- | :--- | :--- | :---: |
+      > | 방식 A | 빠름 | 확장성 낮음 | 기각 |
+      > | 방식 B | 표준 | 구현 복잡 | **채택** |
+      >
+      > (표 위아래 빈 줄 및 > 필수)
+
+      > [!LIGHTBULB] ■ Aha! Moment
+      > - 대화 중 발견: `pathlib`을 쓰면 OS 간 경로 호환성 문제가 해결됨.
+
+      ### 💻 3. 구현 상세 (Implementation Detail)
+
+      > [!CODE] ■ Production Code
+      > ```python
+      > # 모든 줄 앞에 > 필수
+      > def convert_path(p: Path) -> str:
+      >     # 1. 예외 처리: None 값 방어
+      >     if not p: return ""
+      >     # 2. 정규화 수행
+      >     return p.as_posix()
+      > ```
+
+      ### 📊 4. 검증 및 다음 과제
+      - **데이터 정합성**: 파일 개수 일치 여부 확인.
+      - **Next Action**: 변환된 데이터를 YOLO v8 학습 파이프라인에 연결.
+      
+
+  PPT_Storyboard:
+    output_suffix: "_PPT_Draft.md"
+    use_subject_prefix: true
+    system_role: "You are a Professional Technical Presentation Designer. You structure raw content into a logical slide deck."
+    prompt_template: |
+      [Context Data]
+      {context}
+
+      [🔥 CRITICAL FORMATTING RULES]
+      1. **Slide Unit**: 출력은 철저히 **슬라이드(Slide) 단위**로 구획하십시오.
+      2. **Clean Text**: `![img-...]` 같은 OCR 노이즈는 제거하고, 해당 위치에 필요한 **도식/이미지 가이드**를 글로 작성하십시오.
+      3. **Code Formatting**: 코드 예시는 반드시 문법 하이라이팅(`python`)을 적용하십시오.
+      4. **Strict Callout**:
+         - 슬라이드 핵심 메시지 → `> [!ABSTRACT] ■ Key Message`
+         - 시각화/이미지 가이드 → `> [!INFO] ■ Visual Guide`
+         - 발표 스크립트 요약 → `> [!TIP] ■ Speaker Notes`
+
+      ---
+      [💾 출력 가이드]
+      - 파일명: `[주제]_PPT_Draft.md`
+      - 구조:
+        # 1. [챕터 제목]
+        ## Slide 1.1: [슬라이드 제목]
+        (내용)
+
+      ---
+      [🚨 MISSION: STORYBOARDING]
+      입력된 원고를 분석하여 **"청중이 이해하기 쉬운 논리적 흐름"**으로 재배치하십시오.
+      단순 요약이 아니라, **PPT 장표에 바로 넣을 수 있는 구조**로 변환해야 합니다.
+
+      [출력 템플릿 예시]
+
+      # 📊 {subject} 프레젠테이션 스토리보드
+
+      ## 🎯 1. 전체 개요 (Executive Summary)
+      > [!ABSTRACT] ■ Key Message
+      > 이 발표는 **AI 엔지니어를 위한 웹 앱 프레임워크(Streamlit)**의 기초부터 배포까지를 다룹니다.
+
+      ---
+
+      ## 📕 Chapter 1. 웹 애플리케이션의 이해
+
+      ### Slide 1.1: 웹 서비스의 작동 원리
+
+      > [!ABSTRACT] ■ Key Message
+      > 웹은 클라이언트(요청)와 서버(응답)의 상호작용으로 이루어집니다.
+
+      **1. 기본 개념**
+      - **클라이언트**: 사용자의 브라우저 (요청 발송)
+      - **서버**: 데이터 가공 및 응답 (Response)
+      - **URL**: 서버의 위치를 찾는 주소
+
+      > [!INFO] ■ Visual Guide
+      > - 좌측에 노트북(클라이언트), 우측에 서버 아이콘 배치.
+      > - 화살표로 Request(요청)와 Response(응답) 흐름 도식화.
+
+      > [!TIP] ■ Speaker Notes
+      > "우리가 매일 쓰는 웹은 사실 단순한 요청과 응답의 반복입니다. AI 모델을 서빙할 때도 이 구조는 변하지 않습니다."
+
+      ---
+
+      ## 📙 Chapter 2. Streamlit 기초
+
+      ### Slide 2.1: 왜 Streamlit인가?
+
+      > [!ABSTRACT] ■ Key Message
+      > 데이터 과학자를 위해 탄생한, **HTML/CSS 없이 Python만으로** 만드는 웹 앱입니다.
+
+      **1. 기존 vs Streamlit**
+      | 구분 | 기존 방식 (Flask/Django) | Streamlit |
+      | :--- | :--- | :--- |
+      | 언어 | HTML, CSS, JS, Python | **Python 100%** |
+      | 난이도 | 높음 (프론트엔드 지식 필요) | **낮음 (직관적 API)** |
+      | 용도 | 범용 웹 서비스 | **데이터 대시보드, 프로토타입** |
+
+      **2. 핵심 코드 예시**
+      ```python
+      import streamlit as st
+      st.title("Hello AI")
+      st.line_chart(data)
+      ```
+
+      > [!INFO] ■ Visual Guide
+      > - "Python Code"가 마법처럼 "Web App"으로 변하는 애니메이션 효과 이미지 추천.
+
+      ---
+
+      ## 📘 Chapter 3. 실습 및 배포
+
+      ### Slide 3.1: 레이아웃 및 인터랙션
+      ...

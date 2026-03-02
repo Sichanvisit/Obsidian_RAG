@@ -1,0 +1,115 @@
+system:
+  root_input_dir: ./10_AI_Engineering
+  root_output_dir: ./11_RAG_Knowledge_Base
+  chroma_db_root: ./chroma_db
+models:
+  gpt-5:
+    type: openai
+    max_tokens: 150000
+  gpt-5-mini:
+    type: openai
+    max_tokens: 400000
+  gpt-5-nano:
+    type: openai
+    max_tokens: 400000
+  gpt-4-mini:
+    type: openai
+    max_tokens: 128000
+  qwen2.5-coder:3b:
+    type: ollama
+    max_tokens: 100000
+  qwen2.5:3b:
+    type: ollama
+    max_tokens: 100000
+  qwen2.5-coder:7b:
+    type: ollama
+    max_tokens: 100000
+jobs:
+- name: Summary_Storage_Center
+  subject: 📚 요약본_통합_저장소
+  input_dir: ./11_RAG_Knowledge_Base
+  output_dir: ./11_RAG_Knowledge_Base
+  ingest:
+    enabled: true
+    collection_raw: Summary_Storage_Center
+    collection_summary: sum_Summary_Storage_Center
+- name: 00_Career__insight_Summary
+  subject: 00_Career_&_insight
+  input_dir: ./10_AI_Engineering/00_Career_&_insight
+  output_dir: ./11_RAG_Knowledge_Base/00_Career_&_insight
+  ingest:
+    enabled: true
+    collection_raw: 00_Career__insight
+    collection_summary: sum_00_Career__insight
+- name: 01_Python_Core_Summary
+  subject: 01_Python_Core
+  input_dir: ./10_AI_Engineering/01_Python_Core
+  output_dir: ./11_RAG_Knowledge_Base/01_Python_Core
+  ingest:
+    enabled: true
+    collection_raw: 01_Python_Core
+    collection_summary: sum_01_Python_Core
+- name: 11_Machine_Learning_Summary
+  subject: 11_Machine_Learning
+  input_dir: ./10_AI_Engineering/11_Machine_Learning
+  output_dir: ./11_RAG_Knowledge_Base/11_Machine_Learning
+  ingest:
+    enabled: true
+    collection_raw: 11_Machine_Learning
+    collection_summary: sum_11_Machine_Learning
+- name: 12_Deep_Learning_Summary
+  subject: 12_Deep_Learning
+  input_dir: ./10_AI_Engineering/12_Deep_Learning
+  output_dir: ./11_RAG_Knowledge_Base/12_Deep_Learning
+  ingest:
+    enabled: true
+    collection_raw: 12_Deep_Learning
+    collection_summary: sum_12_Deep_Learning
+- name: 13_LLM_GenAI_Summary
+  subject: 13_LLM_GenAI
+  input_dir: ./10_AI_Engineering/13_LLM_GenAI
+  output_dir: ./11_RAG_Knowledge_Base/13_LLM_GenAI
+  ingest:
+    enabled: true
+    collection_raw: 13_LLM_GenAI
+    collection_summary: sum_13_LLM_GenAI
+- name: 14_배포_연결_Summary
+  subject: 14_배포_연결
+  input_dir: ./10_AI_Engineering/14_배포_연결
+  output_dir: ./11_RAG_Knowledge_Base/14_배포_연결
+  ingest:
+    enabled: true
+    collection_raw: 14_배포_연결
+    collection_summary: sum_14_배포_연결
+- name: 99_Projects_Archive__01_초급_Proj_Summary
+  subject: 01_초급_Proj
+  input_dir: ./10_AI_Engineering/99_Projects_Archive/01_초급_Proj
+  output_dir: ./11_RAG_Knowledge_Base/99_Projects_Archive/01_초급_Proj
+  ingest:
+    enabled: true
+    collection_raw: 99_Projects_Archive__01_초급_Proj
+    collection_summary: sum_99_Projects_Archive__01_초급_Proj
+- name: 99_Projects_Archive__02_중급_Proj_Summary
+  subject: 02_중급_Proj
+  input_dir: ./10_AI_Engineering/99_Projects_Archive/02_중급_Proj
+  output_dir: ./11_RAG_Knowledge_Base/99_Projects_Archive/02_중급_Proj
+  ingest:
+    enabled: true
+    collection_raw: 99_Projects_Archive__02_중급_Proj
+    collection_summary: sum_99_Projects_Archive__02_중급_Proj
+- name: 99_Projects_Archive__03_Second_Brain_RAG_Summary
+  subject: 03_Second_Brain_RAG
+  input_dir: ./10_AI_Engineering/99_Projects_Archive/03_Second_Brain_RAG
+  output_dir: ./11_RAG_Knowledge_Base/99_Projects_Archive/03_Second_Brain_RAG
+  ingest:
+    enabled: true
+    collection_raw: 99_Projects_Archive__03_Second_Brain_RAG
+    collection_summary: sum_99_Projects_Archive__03_Second_Brain_RAG
+- name: 99_Projects_Archive__04_CFD_Analysis_Summary
+  subject: 04_CFD_Analysis
+  input_dir: ./10_AI_Engineering/99_Projects_Archive/04_CFD_Analysis
+  output_dir: ./11_RAG_Knowledge_Base/99_Projects_Archive/04_CFD_Analysis
+  ingest:
+    enabled: true
+    collection_raw: 99_Projects_Archive__04_CFD_Analysis
+    collection_summary: sum_99_Projects_Archive__04_CFD_Analysis

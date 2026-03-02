@@ -1,0 +1,33 @@
+﻿# Environment
+.env
+backend/.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Test/cache temp
+.pytest_cache/
+pytest-cache-files-*/
+
+# Local runtime logs
+*.out
+*.err
+backend_run.out
+backend_run.err
+b.out
+b.err
+
+# Local IDE
+.vscode/
+
+# Local generated data stores
+data/vector_store/
+data/chat_history/
+projects/*/chat_history.json
+
+# OS
+.DS_Store
+Thumbs.db
