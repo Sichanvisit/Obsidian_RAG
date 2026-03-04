@@ -27,6 +27,7 @@ b.err
 data/vector_store/
 data/chat_history/
 projects/*/chat_history.json
+PORTFOLIO_*.md
 
 # OS
 .DS_Store
