@@ -11,6 +11,48 @@ Obsidian 문서를 검색하고 현재 노트 문맥까지 함께 활용해 근�
 - Generator, Tagger, Ingest가 API 스트리밍 도구로 분리되었습니다.
 - Streamlit은 운영 콘솔과 fallback UI 역할로 재정의되었습니다.
 
+## UI 스크린샷
+
+### Obsidian Plugin + Chat
+
+V2는 Obsidian 안에서 현재 노트 문맥과 함께 질문하고, 우측 패널에서 로컬 에이전트 흐름을 바로 다루는 구조로 바뀌었습니다.
+
+<p align="center">
+  <img src="./docs/readme-assets/v2/plugin-chat-overview.jpg" alt="V2 Obsidian plugin and chat screen" width="900" />
+</p>
+
+### Generator
+
+Obsidian 로컬 에이전트 안에서 폴더 선택, 출력 경로, 모델, 패턴 세트를 조합해 생성 작업을 실행하는 화면입니다.
+
+<p align="center">
+  <img src="./docs/readme-assets/v2/generator-panel.jpg" alt="V2 Generator panel" width="420" />
+</p>
+
+### Tagger
+
+선택 범위의 frontmatter를 갱신하고 vault 전체 인덱스를 다시 맞추는 태깅 워크플로우 화면입니다.
+
+<p align="center">
+  <img src="./docs/readme-assets/v2/tagger-panel.jpg" alt="V2 Tagger panel" width="420" />
+</p>
+
+### Ingest
+
+프로젝트 범위, 레이어, 청킹 정책을 제어하면서 인덱스를 재구성하는 화면입니다.
+
+<p align="center">
+  <img src="./docs/readme-assets/v2/ingest-panel.jpg" alt="V2 Ingest panel" width="420" />
+</p>
+
+### Logs
+
+워크플로우 실행 결과를 탭별 로그로 확인할 수 있도록 분리한 운영 화면입니다.
+
+<p align="center">
+  <img src="./docs/readme-assets/v2/logs-panel.jpg" alt="V2 workflow logs panel" width="420" />
+</p>
+
 ## 주요 기능
 
 - `/api/chat/stream`과 `/api/chat/obsidian/stream`에서 NDJSON 스트리밍 응답 제공
@@ -167,4 +209,3 @@ streamlit run frontend/app.py --server.port 8502
 
 V2는 `Obsidian Plugin 중심 워크스페이스`로 넘어간 단계입니다.
 핵심은 현재 노트 문맥 활용, relation-aware retrieval, 운영 도구 API 분리, Streamlit 역할 재정의였습니다.
-

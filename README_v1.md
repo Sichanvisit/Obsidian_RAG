@@ -10,6 +10,40 @@ Obsidian 문서를 검색해 근거 기반 답변을 생성하는 로컬 RAG 시
 - summary/raw 이중 저장소와 하이브리드 검색을 사용합니다.
 - `start_rag.bat`로 백엔드와 프론트엔드를 함께 실행합니다.
 
+## UI 스크린샷
+
+### Streamlit 운영 화면
+
+V1은 Streamlit이 메인 사용 화면이자 운영 콘솔 역할을 함께 맡았습니다.
+
+<p align="center">
+  <img src="./docs/readme-assets/v1/chat-overview.jpg" alt="V1 Streamlit Ops overview" width="900" />
+</p>
+
+### Generator
+
+지식 생성 워크플로우에서 소스 폴더와 주제를 선택하고 구조화 노트를 생성하던 화면입니다.
+
+<p align="center">
+  <img src="./docs/readme-assets/v1/generator-main.jpg" alt="V1 Generator screen" width="720" />
+</p>
+
+### Tagger
+
+요약/원문 노트의 frontmatter 태그를 자동 갱신하던 화면입니다.
+
+<p align="center">
+  <img src="./docs/readme-assets/v1/tagger-main.jpg" alt="V1 Tagger screen" width="720" />
+</p>
+
+### Ingest
+
+프로젝트 단위로 인덱스를 재구성하고 청킹 옵션을 제어하던 화면입니다.
+
+<p align="center">
+  <img src="./docs/readme-assets/v1/ingest-main.jpg" alt="V1 Ingest screen" width="720" />
+</p>
+
 ## 주요 기능
 
 - `/api/chat/stream`에서 단계 로그와 답변을 스트리밍으로 반환
@@ -155,4 +189,3 @@ docker compose up --build
 
 V1은 `Streamlit 중심 로컬 RAG 챗봇`으로서 파이프라인을 처음 제품 형태로 묶은 단계입니다.
 핵심은 summary/raw 이중 저장소, 하이브리드 검색, Streamlit 메인 UI 정리였습니다.
-
