@@ -1,17 +1,57 @@
-# Obsidian_RAG V2 - Obsidian Plugin-Centered Local RAG Workspace
+# Obsidian_RAG V2 - Obsidian Plugin 중심 로컬 지식 워크스페이스
 
-Obsidian 문서를 검색하고 현재 노트 문맥까지 함께 활용해 근거 기반 답변을 생성하는 로컬 RAG 프로젝트의 2차 버전입니다.
-현재 구조는 `FastAPI + Streamlit 운영 콘솔 + Obsidian Plugin` 조합이며, 채팅뿐 아니라 `Generator`, `Tagger`, `Ingest` 워크플로우까지 다룹니다.
+> Obsidian 안에서 현재 노트 문맥, 관련 문서 검색, 생성/태깅/인덱싱 워크플로우를 함께 다룰 수 있도록 확장한 2차 버전입니다.
 
-## V2 핵심 포인트
+V1이 별도 Streamlit 콘솔에서 로컬 RAG를 구현했다면, V2는 실제 작업이 일어나는 Obsidian 안으로 검색과 워크플로우를 끌어오는 데 초점을 맞췄습니다.  
+개인 프로젝트로 구조 설계, FastAPI 백엔드, Obsidian 플러그인, Streamlit 운영 콘솔, relation-aware retrieval, 테스트, 문서화를 직접 구현했습니다.
 
-- Obsidian Plugin이 메인 클라이언트입니다.
-- `/api/chat/obsidian/stream`으로 현재 노트, 링크, 폴더, 태그, 백링크 문맥을 함께 전달할 수 있습니다.
-- typed relation과 related file 정보를 활용하는 relation-aware retrieval이 추가되었습니다.
-- Generator, Tagger, Ingest가 API 스트리밍 도구로 분리되었습니다.
-- Streamlit은 운영 콘솔과 fallback UI 역할로 재정의되었습니다.
+## 직접 구현한 범위
 
-## UI 스크린샷
+- Obsidian Plugin 기반 메인 클라이언트
+- `/api/chat/obsidian/stream`와 도구용 스트리밍 APIs
+- typed relation / related file 기반 relation-aware retrieval
+- Generator, Tagger, Ingest 워크플로우
+- Streamlit 운영 콘솔과 실행/헬스체크 스크립트
+
+## 핵심 기술 스택
+
+- Python 3.12, FastAPI, Pydantic
+- TypeScript, Obsidian Plugin API, esbuild
+- LangChain, ChromaDB, sentence-transformers
+- BM25, RRF, relation-aware ranking, Ollama / OpenAI
+
+## 프로젝트 개요
+
+V1에서는 로컬 문서를 검색하고 응답하는 흐름을 만들었지만, 실제 지식 작업은 여전히 Obsidian 안에서 이루어졌습니다.  
+V2의 목표는 이 분리를 줄이고, 현재 노트와 링크 구조를 활용해 검색 품질을 높이면서, 노트 생성·태깅·인덱싱까지 하나의 지식 워크스페이스로 묶는 것이었습니다.
+
+## 무엇을 만들었는가
+
+- Obsidian 플러그인을 메인 클라이언트로 두고, 현재 노트, 링크, 폴더, 태그, 백링크 문맥을 백엔드에 함께 전달할 수 있게 구성했습니다.
+- `/api/chat/obsidian/stream`을 통해 일반 채팅과 구분된 Obsidian 전용 질의 흐름을 구현했습니다.
+- typed relation과 related file 정보를 활용해 1-hop, 2-hop 확장을 수행하는 relation-aware retrieval을 추가했습니다.
+- Generator, Tagger, Ingest를 개별 스트리밍 API로 분리해 대화 외 작업도 동일한 인프라로 처리하도록 설계했습니다.
+- Streamlit은 메인 UI가 아니라 운영 콘솔과 fallback UI로 재정의했습니다.
+- `start_rag.bat`와 health check 흐름을 보강해 로컬 환경에서 재기동과 재사용이 가능하도록 정리했습니다.
+
+## 지식 처리 / LLM 활용 방식
+
+이 버전에서는 LLM을 단순 채팅 응답기가 아니라, 현재 노트 문맥과 검색 결과를 결합해 지식을 재구성하는 레이어로 사용했습니다.  
+질문이 들어오면 현재 노트와 관련 문서의 구조적 맥락을 함께 수집하고, hybrid retrieval과 relation expansion으로 후보를 보강한 뒤, 생성 단계에서 `sources`와 `retrieval_reason`까지 추적 가능하도록 설계했습니다.  
+또한 LLM을 채팅에만 쓰지 않고, Generator/Tagger/Ingest 워크플로우와 연결해 노트 생성, metadata 갱신, 인덱스 재구성 같은 작업 흐름으로 확장했습니다.
+
+## 시스템 구조
+
+```text
+[Obsidian Plugin / Streamlit Ops Console]
+  -> FastAPI
+  -> AgenticFlow (Think -> Search -> Grade -> Rewrite -> Generate -> Review)
+  -> RagEngine (Hybrid Search + Relation Expansion + Rerank)
+  -> LLM (Ollama / OpenAI)
+  -> NDJSON Streaming Response
+```
+
+## 화면 예시
 
 ### Obsidian Plugin + Chat
 
@@ -53,159 +93,16 @@ Obsidian 로컬 에이전트 안에서 폴더 선택, 출력 경로, 모델, 패
   <img src="./docs/readme-assets/v2/logs-panel.jpg" alt="V2 workflow logs panel" width="420" />
 </p>
 
-## 주요 기능
+## 이 버전으로 보여주고자 한 역량
 
-- `/api/chat/stream`과 `/api/chat/obsidian/stream`에서 NDJSON 스트리밍 응답 제공
-- summary/raw 하이브리드 검색과 rerank로 문서 후보 구성
-- relation graph 기반 1-hop, 2-hop 확장으로 관련 노트 보강
-- 검색 결과에 `sources`, `retrieval_reason`, relation chain 정보 포함
-- Streamlit에서 Ops 콘솔, Legacy Chat, Generator, Tagger, Ingest 운영
-- Obsidian Plugin에서 답변 저장, 소스 노트 열기, 현재 노트 기반 질문, 워크플로우 실행
-- `start_rag.bat`가 백엔드 상태 확인 후 재사용 또는 재기동
+- 노트 도메인에 맞춘 제품형 문제 정의와 워크플로우 설계
+- 백엔드 API와 Obsidian 플러그인 간 인터페이스 설계
+- relation graph를 활용한 retrieval 품질 개선
+- 대화형 기능과 운영 도구를 하나의 로컬 시스템으로 통합하는 능력
 
-## 아키텍처
+## 실행 메모
 
-```text
-[Obsidian Plugin / Streamlit Ops Console]
-  -> FastAPI
-  -> AgenticFlow (Think -> Search -> Grade -> Rewrite -> Generate -> Review)
-  -> RagEngine (Hybrid Search + Relation Expansion + Rerank)
-  -> LLM (Ollama / OpenAI)
-  -> NDJSON Streaming Response
-```
-
-## 기술 스택
-
-### Backend
-- Python 3.12
-- FastAPI, Uvicorn
-- Pydantic
-- PyYAML, python-dotenv
-
-### Frontend / Client
-- Streamlit
-- Obsidian Plugin (TypeScript, esbuild)
-- httpx
-
-### AI / RAG
-- LangChain
-- ChromaDB
-- sentence-transformers / HuggingFace Embeddings
-- BM25, RRF, relation-aware ranking
-- Ollama (`qwen3.5:4b` 기본) / OpenAI Chat Models
-
-### Infra / Tools
-- Docker Compose
-- GitHub Actions (`github/workflows/ci.yml`)
-
-## 프로젝트 구조
-
-```text
-Obsidian_RAG/
-|- backend/                    # FastAPI 서버와 RAG 핵심 로직
-|  |- main.py                  # /health, /api/chat/*, /api/tools/*
-|  |- config/                  # jobs.yaml, prompts.yaml, 경로/설정 로더
-|  |- src/                     # graph, rag engine, pipeline, schema
-|  `- tests/                   # relation/ranking 테스트 포함
-|- frontend/                   # Streamlit 운영 콘솔
-|  `- app.py
-|- obsidian-plugin/            # Obsidian Local Agent 플러그인
-|- data/                       # 로컬 인덱스/벡터 저장소(기본적으로 Git 제외)
-|- projects/                   # 프로젝트별 채팅 이력
-|- start_rag.bat
-`- docker-compose.yml
-```
-
-## 설치 및 실행
-
-### 사전 요구사항
-
-- Python 3.12
-- `pip`
-- Node.js 20+ (`obsidian-plugin` 빌드 시)
-- Ollama
-- Obsidian Vault 경로
-
-### 설치
-
-```bash
-git clone https://github.com/Sichanvisit/Obsidian_RAG.git
-cd Obsidian_RAG
-
-python -m venv .venv
-# Windows
-.\.venv\Scripts\activate
-
-pip install -r backend/requirements.txt
-pip install -r frontend/requirements.txt
-```
-
-### Obsidian 플러그인 빌드
-
-```bash
-cd obsidian-plugin
-npm install
-npm run build
-cd ..
-```
-
-### 환경변수 설정
-
-```env
-# Model / LLM
-OPENAI_API_KEY=
-LOCAL_LLM_URL=http://localhost:11434
-LOCAL_LLM_MODEL=qwen3.5:4b
-EMBEDDING_MODEL_NAME=BAAI/bge-m3
-LLM_TEMPERATURE=0.2
-
-# Vault / data paths
-OBSIDIAN_PATH=
-DATA_DIC_PATH=
-DATA_SUMMATION_PATH=
-OBSIDIAN_VAULT_PATH=
-
-# Server
-BACKEND_PORT=8011
-BACKEND_URL=http://127.0.0.1:8011
-ENABLE_STRATEGY_PLANNER=0
-```
-
-### 실행
-
-#### 방법 1) Windows 일괄 실행
-
-```bat
-start_rag.bat
-```
-
-기본 포트는 Backend `8011`, Frontend `8502`입니다.
-
-#### 방법 2) 수동 실행
-
-```bash
-# 1) Backend
-python backend/main.py
-
-# 2) Frontend
-streamlit run frontend/app.py --server.port 8502
-```
-
-## API
-
-| Method | Endpoint | 설명 |
-|:---:|:---|:---|
-| `GET` | `/health` | 서버 및 엔진 준비 상태 조회 |
-| `POST` | `/api/chat/stream` | 일반 질의 스트리밍 응답 |
-| `POST` | `/api/chat/obsidian/stream` | 현재 노트와 문맥을 포함한 Obsidian 질의 처리 |
-| `POST` | `/api/chat/stop` | 세션 기준 스트리밍 중단 |
-| `GET` | `/api/tools/config` | Generator, Tagger, Ingest 설정 반환 |
-| `POST` | `/api/tools/files` | Generator 입력 파일 목록 조회 |
-| `POST` | `/api/tools/generator/stream` | Generator 작업 스트리밍 실행 |
-| `POST` | `/api/tools/tagger/stream` | Tagger 작업 스트리밍 실행 |
-| `POST` | `/api/tools/ingest/stream` | Ingest 작업 스트리밍 실행 |
-
-## V2 요약
-
-V2는 `Obsidian Plugin 중심 워크스페이스`로 넘어간 단계입니다.
-핵심은 현재 노트 문맥 활용, relation-aware retrieval, 운영 도구 API 분리, Streamlit 역할 재정의였습니다.
+- 기본 포트: Backend `8011`, Frontend `8502`
+- 실행 진입점: `start_rag.bat` 또는 `python backend/main.py` + `streamlit run frontend/app.py --server.port 8502`
+- 플러그인 빌드: `cd obsidian-plugin && npm install && npm run build`
+- 주요 엔드포인트: `/health`, `/api/chat/stream`, `/api/chat/obsidian/stream`, `/api/tools/*`
