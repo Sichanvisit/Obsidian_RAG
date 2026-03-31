@@ -398,13 +398,17 @@ Return rewritten query only.
                 # ?쒓? 二쇱꽍 蹂듦뎄
                 is_main = doc.metadata.get("is_main", True) if hasattr(doc, 'metadata') else True
                 folder = doc.metadata.get("folder", "") if hasattr(doc, 'metadata') else ""
+                source_type = doc.metadata.get("source_type", "") if hasattr(doc, 'metadata') else ""
+                retrieval_reason = doc.metadata.get("retrieval_reason", "") if hasattr(doc, 'metadata') else ""
                 
                 doc_info = {
                     "source": doc.source_path,
                     "score": doc.score,
                     "snippet": doc.page_content[:4000],  # context length cap
                     "is_main": is_main,
-                    "folder": folder
+                    "folder": folder,
+                    "source_type": source_type,
+                    "retrieval_reason": retrieval_reason,
                 }
                 
                 if is_main:

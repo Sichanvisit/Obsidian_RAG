@@ -23,6 +23,7 @@ def get_model(config, model_name: str = None):
     return ChatOllama(
         model=target,
         base_url=os.getenv("LOCAL_LLM_URL", "http://localhost:11434"),
+        reasoning=False,
         temperature=float(os.getenv("LLM_TEMPERATURE", "0.2")),
         num_predict=-1,
         repeat_penalty=1.15,

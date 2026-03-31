@@ -145,5 +145,5 @@ class ChatRequest(BaseModel):
     query: str
     session_id: str = "default"
     project_name: str = "Default"
-    model_name: str = "qwen2.5-coder:3b" # 사용할 모델 지정 옵션
+    model_name: str = "qwen3.5:4b" # 사용할 모델 지정 옵션
     history: str = ""  # ✅ 대화 히스토리 context

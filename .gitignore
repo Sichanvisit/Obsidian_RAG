@@ -15,10 +15,15 @@ pytest-cache-files-*/
 # Local runtime logs
 *.out
 *.err
+*.log
+*.out.log
+*.err.log
 backend_run.out
 backend_run.err
 b.out
 b.err
+backend/logs/
+tmp/
 
 # Local IDE
 .vscode/
@@ -26,8 +31,13 @@ b.err
 # Local generated data stores
 data/vector_store/
 data/chat_history/
+data/indexes/
 projects/*/chat_history.json
 PORTFOLIO_*.md
+
+# Node / plugin local deps
+node_modules/
+obsidian-plugin/node_modules/
 
 # OS
 .DS_Store

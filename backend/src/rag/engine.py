@@ -205,6 +205,91 @@ class RagEngine:
         return link_clean.lower().strip()
 
     @staticmethod
+    def _normalize_reference_token(value: str) -> str:
+        token = (value or "").strip().replace("\\", "/")
+        if "/" in token:
+            token = token.split("/")[-1]
+        token = re.sub(r"\.[a-z0-9]{1,8}$", "", token, flags=re.IGNORECASE)
+        token = re.sub(r"[^\w가-힣]+", " ", token.lower())
+        token = re.sub(r"\s+", " ", token).strip()
+        return token
+
+    @classmethod
+    def _reference_variants(cls, value: str) -> List[str]:
+        raw_value = (value or "").strip().replace("\\", "/")
+        if not raw_value:
+            return []
+        basename = raw_value.split("/")[-1]
+        base_no_md = basename[:-3] if basename.lower().endswith(".md") else basename
+        base_stem = Path(base_no_md).stem if "." in base_no_md else base_no_md
+        variants = {
+            cls._normalize_reference_token(basename),
+            cls._normalize_reference_token(base_no_md),
+            cls._normalize_reference_token(base_stem),
+            cls._normalize_reference_token(base_no_md.replace("_", " ")),
+            cls._normalize_reference_token(base_no_md.replace("-", " ")),
+            cls._normalize_reference_token(base_stem.replace("_", " ")),
+            cls._normalize_reference_token(base_stem.replace("-", " ")),
+        }
+        return [variant for variant in dict.fromkeys(variants) if variant]
+
+    @classmethod
+    def _score_reference_match(cls, reference_variants: List[str], candidate: str) -> int:
+        if not reference_variants:
+            return 0
+        candidate_norm = cls._normalize_reference_token(candidate)
+        if not candidate_norm:
+            return 0
+
+        best = 0
+        candidate_tokens = set(candidate_norm.split())
+        for variant in reference_variants:
+            if not variant:
+                continue
+            if candidate_norm == variant:
+                return 100
+            if len(variant) >= 4 and (variant in candidate_norm or candidate_norm in variant):
+                best = max(best, 80)
+            variant_tokens = set(variant.split())
+            overlap = candidate_tokens & variant_tokens
+            if len(overlap) >= 2:
+                best = max(best, 60)
+            elif len(overlap) == 1:
+                token = next(iter(overlap))
+                if len(token) >= 4:
+                    best = max(best, 40)
+        return best
+
+    @staticmethod
+    def _parse_string_list(value: Any) -> List[str]:
+        if not value:
+            return []
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            try:
+                import ast
+
+                parsed = ast.literal_eval(stripped)
+                if parsed is not value:
+                    return RagEngine._parse_string_list(parsed)
+            except Exception:
+                pass
+            return [item.strip() for item in re.split(r"[\n,]+", stripped) if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            output: List[str] = []
+            for item in value:
+                output.extend(RagEngine._parse_string_list(item))
+            return output
+        if isinstance(value, dict):
+            output: List[str] = []
+            for item in value.values():
+                output.extend(RagEngine._parse_string_list(item))
+            return output
+        return []
+
+    @staticmethod
     def _extract_query_keywords(query: str) -> List[str]:
         query_lower = (query or "").lower()
         keywords = [w for w in re.findall(r"\w+", query_lower) if len(w) > 1]
@@ -297,20 +382,26 @@ class RagEngine:
         return any(p in filename_lower for p in patterns)
 
     @staticmethod
-    def _extract_s_tags(tags_raw: Any) -> List[str]:
-        if not tags_raw:
+    def _extract_retrieval_tags(tags_raw: Any) -> List[str]:
+        tags = RagEngine._parse_string_list(tags_raw)
+        output: List[str] = []
+        for tag in tags:
+            if not isinstance(tag, str):
+                continue
+            if tag.startswith("S/") or tag.startswith("T/") or tag.startswith("D/Project/"):
+                output.append(tag)
+                continue
+            if tag.startswith("C/") and "/" in tag[2:]:
+                output.append(tag)
+        return list(dict.fromkeys(output))
+
+    def _extract_related_files(self, metadata: Dict[str, Any]) -> List[str]:
+        if not isinstance(metadata, dict):
             return []
-        if isinstance(tags_raw, str):
-            try:
-                import ast
-                tags = ast.literal_eval(tags_raw)
-            except Exception:
-                return []
-        else:
-            tags = tags_raw
-        if not isinstance(tags, list):
-            return []
-        return [t for t in tags if isinstance(t, str) and t.startswith("S/")]
+        candidates: List[str] = []
+        for key in ("related_files", "relatedFiles", "reference_files", "referenceFiles"):
+            candidates.extend(self._parse_string_list(metadata.get(key)))
+        return list(dict.fromkeys([candidate for candidate in candidates if candidate]))
 
     def _resolve_project_path(self, folder: str) -> Optional[Path]:
         folder_lower = (folder or "").lower()
@@ -420,15 +511,9 @@ class RagEngine:
     def _find_raw_file(self, link: str, folder_hint: str = "") -> Optional[Path]:
         if not link:
             return None
-        link_name = self._normalize_link_name(link)
-        if not link_name:
+        reference_variants = self._reference_variants(link)
+        if not reference_variants:
             return None
-
-        candidate_names = {
-            link_name,
-            link_name.replace(" ", "_").replace("-", "_"),
-            link_name.replace("_", " "),
-        }
         files = self.raw_files if self.raw_files else list(self.raw_file_map.values())
         hint_patterns = self._folder_hint_patterns(folder_hint)
 
@@ -438,29 +523,29 @@ class RagEngine:
             path_l = str(path).lower()
             return any(h in path_l for h in hint_patterns)
 
-        # 1) Exact stem match in hinted folder first.
+        best_hint: Optional[Tuple[int, Path]] = None
+        best_global: Optional[Tuple[int, Path]] = None
         for p in files:
-            if by_hint(p) and p.stem.lower() in candidate_names:
-                return p
+            match_score = self._score_reference_match(reference_variants, p.stem)
+            if match_score <= 0:
+                continue
+            if by_hint(p) and (best_hint is None or match_score > best_hint[0]):
+                best_hint = (match_score, p)
+            if best_global is None or match_score > best_global[0]:
+                best_global = (match_score, p)
 
-        # 2) Exact stem match globally.
-        for p in files:
-            if p.stem.lower() in candidate_names:
-                return p
-
-        # 3) Conservative fallback (substring) only for sufficiently long keys.
-        if len(link_name) >= 5:
-            for p in files:
-                stem = p.stem.lower()
-                if by_hint(p) and (link_name in stem or stem in link_name):
-                    return p
-
+        if best_hint and best_hint[0] >= 40:
+            return best_hint[1]
+        if best_global and best_global[0] >= 80:
+            return best_global[1]
         return None
 
     def _search_raw_db_by_link(self, link: str, folder_hint: str) -> Optional[RagDocument]:
         if not link or not folder_hint:
             return None
-        link_lower = self._normalize_link_name(link)
+        reference_variants = self._reference_variants(link)
+        if not reference_variants:
+            return None
         raw_db_path = VECTOR_DB_DIR / "raw" / folder_hint
         if not raw_db_path.exists():
             return None
@@ -471,42 +556,88 @@ class RagEngine:
             data = col.get(include=["documents", "metadatas"])
             docs = data.get("documents", [])
             metas = data.get("metadatas", [])
-            exact_names = {
-                link_lower,
-                link_lower.replace(" ", "_").replace("-", "_"),
-                link_lower.replace("_", " "),
-            }
-            fallback_idx = None
+            best_idx = None
+            best_score = 0
             for i, meta in enumerate(metas):
                 source_rel = self._get_doc_source_path(meta or {})
                 filename = self._get_doc_filename(meta or {})
-                stem = Path(source_rel or filename).stem.lower()
-                if stem in exact_names:
-                    text = docs[i] if i < len(docs) else ""
-                    return RagDocument(
-                        page_content=(text or "")[:4000],
-                        source_path=source_rel or filename or f"{link_lower}.md",
-                        layer=LayerType.RAW,
-                        score=0.85,
-                        metadata={"from_link_db": True, "folder": folder_hint, "is_main": True},
-                    )
-                if fallback_idx is None and len(link_lower) >= 5 and (link_lower in stem or stem in link_lower):
-                    fallback_idx = i
-            if fallback_idx is not None:
-                meta = metas[fallback_idx] or {}
+                stem = Path(source_rel or filename).stem
+                match_score = self._score_reference_match(reference_variants, stem)
+                if match_score > best_score:
+                    best_score = match_score
+                    best_idx = i
+            if best_idx is not None and best_score >= 40:
+                meta = metas[best_idx] or {}
                 source_rel = self._get_doc_source_path(meta)
                 filename = self._get_doc_filename(meta)
-                text = docs[fallback_idx] if fallback_idx < len(docs) else ""
+                text = docs[best_idx] if best_idx < len(docs) else ""
                 return RagDocument(
                     page_content=(text or "")[:4000],
-                    source_path=source_rel or filename or f"{link_lower}.md",
+                    source_path=source_rel or filename or f"{reference_variants[0]}.md",
                     layer=LayerType.RAW,
-                    score=0.75,
+                    score=0.9 if best_score >= 80 else 0.8,
                     metadata={"from_link_db": True, "folder": folder_hint, "is_main": True},
                 )
         except Exception as e:
             logger.debug("Raw DB link search failed: %s", e)
         return None
+
+    def _resolve_reference_raw(
+        self,
+        reference: str,
+        folder_hints: List[str],
+        base_score: float,
+        query_keywords: List[str],
+        collected_tags: List[str],
+        source_type: str,
+        retrieval_reason: str,
+        is_main: bool,
+    ) -> Optional[RagDocument]:
+        for hint in folder_hints:
+            raw_doc = self._search_raw_db_by_link(reference, hint)
+            if raw_doc:
+                raw_doc.score = max(float(raw_doc.score or 0.0), base_score)
+                raw_doc.metadata = {
+                    **(raw_doc.metadata or {}),
+                    "folder": hint,
+                    "is_main": is_main,
+                    "tags": collected_tags,
+                    "source_type": source_type,
+                    "retrieval_reason": retrieval_reason,
+                }
+                return raw_doc
+
+        raw_path = None
+        raw_hint = folder_hints[0] if folder_hints else ""
+        for hint in folder_hints or [""]:
+            candidate = self._find_raw_file(reference, folder_hint=hint)
+            if candidate and candidate.exists():
+                raw_path = candidate
+                raw_hint = hint
+                break
+
+        if not raw_path or not raw_path.exists():
+            return None
+
+        content = self._read_text_safe(raw_path)
+        filename_lower = raw_path.name.lower()
+        keyword_bonus = 0.0
+        if any(keyword.lower() in filename_lower for keyword in query_keywords):
+            keyword_bonus = 0.08
+
+        return RagDocument(
+            page_content=content[:4000],
+            source_path=str(raw_path).replace("\\", "/"),
+            layer=LayerType.RAW,
+            score=min(1.0, base_score + keyword_bonus),
+            metadata={
+                "is_main": is_main,
+                "folder": raw_hint,
+                "tags": collected_tags,
+                "source_type": source_type,
+                "retrieval_reason": retrieval_reason,
+            },
+        )
 
     def _collect_folder_hints(self, default_folder: str, metadata: Dict[str, Any]) -> List[str]:
         hints: List[str] = []
@@ -619,6 +750,8 @@ class RagEngine:
                             "folder": folder,
                             "is_main": True,
                             "chunk_count": len(info["texts"]),
+                            "source_type": "keyword",
+                            "retrieval_reason": f"Matched raw chunks by query keywords: {', '.join(info['matched'])}.",
                         },
                     )
                 )
@@ -667,7 +800,14 @@ class RagEngine:
                         source_path=str(file_path.relative_to(project_path)).replace("\\", "/"),
                         layer=LayerType.RAW,
                         score=score,
-                        metadata={"from_folder_search": True, "is_main": True, "folder": folder, "full_path": str(file_path)},
+                        metadata={
+                            "from_folder_search": True,
+                            "is_main": True,
+                            "folder": folder,
+                            "full_path": str(file_path),
+                            "source_type": "folder",
+                            "retrieval_reason": f"Added from project folder fallback under {folder}.",
+                        },
                     )
                 )
                 seen.add(file_path.name.lower())
@@ -770,11 +910,17 @@ class RagEngine:
                     source_path=f"[Summary] {summary_source}",
                     layer=LayerType.SUMMARY,
                     score=score,
-                    metadata={**metadata, "is_main": True, "folder": summary_folder},
+                    metadata={
+                        **metadata,
+                        "is_main": True,
+                        "folder": summary_folder,
+                        "source_type": "summary",
+                        "retrieval_reason": f"Matched summary evidence from {Path(summary_source).name}.",
+                    },
                 )
             )
 
-            for tag in self._extract_s_tags(metadata.get("tags", "")):
+            for tag in self._extract_retrieval_tags(metadata.get("tags", "")):
                 if tag not in collected_tags:
                     collected_tags.append(tag)
 
@@ -785,45 +931,44 @@ class RagEngine:
                 if link_name in seen_sources:
                     continue
 
-                matched = False
-                for hint in folder_hints or [main_folder]:
-                    raw_doc = self._search_raw_db_by_link(link, hint)
-                    if raw_doc:
-                        documents.append(raw_doc)
-                        seen_sources.add(link_name)
-                        seen_sources.add(raw_doc.source_path.lower())
-                        linked_raw_count += 1
-                        matched = True
-                        break
+                raw_doc = self._resolve_reference_raw(
+                    reference=link,
+                    folder_hints=folder_hints or [main_folder],
+                    base_score=score,
+                    query_keywords=query_keywords,
+                    collected_tags=collected_tags,
+                    source_type="links",
+                    retrieval_reason=f"Expanded raw note from summary wiki link [[{link}]] in {Path(summary_source).name}.",
+                    is_main=True,
+                )
+                if raw_doc:
+                    documents.append(raw_doc)
+                    seen_sources.add(link_name)
+                    seen_sources.add(raw_doc.source_path.lower())
+                    linked_raw_count += 1
 
-                if matched:
+            related_files = self._extract_related_files(metadata)
+            for related_file in related_files[:16]:
+                related_key = self._normalize_reference_token(related_file)
+                if not related_key or related_key in seen_sources:
                     continue
+                raw_doc = self._resolve_reference_raw(
+                    reference=related_file,
+                    folder_hints=folder_hints or [main_folder],
+                    base_score=max(0.45, score * 0.92),
+                    query_keywords=query_keywords,
+                    collected_tags=collected_tags,
+                    source_type="related_files",
+                    retrieval_reason=f"Expanded raw note from related_files entry {related_file} in {Path(summary_source).name}.",
+                    is_main=False,
+                )
+                if raw_doc:
+                    documents.append(raw_doc)
+                    seen_sources.add(related_key)
+                    seen_sources.add(raw_doc.source_path.lower())
+                    linked_raw_count += 1
 
-                for hint in folder_hints or [main_folder]:
-                    raw_path = self._find_raw_file(link, folder_hint=hint)
-                    if raw_path and raw_path.exists():
-                        try:
-                            content = self._read_text_safe(raw_path)
-                            documents.append(
-                                RagDocument(
-                                    page_content=content[:4000],
-                                    source_path=str(raw_path).replace("\\", "/"),
-                                    layer=LayerType.RAW,
-                                    score=score,
-                                    metadata={"from_link": True, "is_main": True, "folder": hint, "tags": collected_tags},
-                                )
-                            )
-                            seen_sources.add(link_name)
-                            seen_sources.add(str(raw_path).lower())
-                            linked_raw_count += 1
-                            matched = True
-                            break
-                        except Exception:
-                            continue
-                if matched:
-                    continue
-
-            if not links:
+            if not links and not related_files:
                 for raw_doc in self._find_raw_by_folder_keyword(main_folder, seen_sources, query)[:8]:
                     documents.append(raw_doc)
                     seen_sources.add(raw_doc.source_path.lower())
@@ -896,7 +1041,13 @@ class RagEngine:
                                         source_path=raw_path.name,
                                         layer=LayerType.RAW,
                                         score=0.3,
-                                        metadata={"from_tag": tag, "via_summary": filename, "is_main": False},
+                                        metadata={
+                                            "from_tag": tag,
+                                            "via_summary": filename,
+                                            "is_main": False,
+                                            "source_type": "tags",
+                                            "retrieval_reason": f"Expanded via tag {tag} from summary {filename}.",
+                                        },
                                     )
                                 )
                             except Exception:

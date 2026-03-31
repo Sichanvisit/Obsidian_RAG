@@ -21,10 +21,10 @@ class JobConfig:
     vector_db_path: Path = VECTOR_DB_PATH
     raw_data_path: Path = RAW_DATA_DIR
     embedding_model: str = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-m3")
-    local_llm_model: str = os.getenv("LOCAL_LLM_MODEL", "qwen2.5-coder:3b")
+    local_llm_model: str = os.getenv("LOCAL_LLM_MODEL", "qwen3.5:4b")
     models: Dict[str, ModelSpec] = field(
         default_factory=lambda: {
-            "qwen2.5-coder:3b": ModelSpec(type="ollama"),
+            "qwen3.5:4b": ModelSpec(type="ollama"),
             "gpt-4o": ModelSpec(type="openai"),
             "gpt-5-mini": ModelSpec(type="openai"),
             "gpt-5-nano": ModelSpec(type="openai"),

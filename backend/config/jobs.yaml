@@ -15,13 +15,7 @@ models:
   gpt-4-mini:
     type: openai
     max_tokens: 128000
-  qwen2.5-coder:3b:
-    type: ollama
-    max_tokens: 100000
-  qwen2.5:3b:
-    type: ollama
-    max_tokens: 100000
-  qwen2.5-coder:7b:
+  qwen3.5:4b:
     type: ollama
     max_tokens: 100000
 jobs:

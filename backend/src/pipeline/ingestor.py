@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple, Set, Optional, Callable # <--- 여기 Callable 확인!
 
 from dotenv import load_dotenv
+from backend.config.paths import OBSIDIAN_ROOT, RAW_DATA_DIR, SUMMARY_DATA_DIR
 
 # LangChain / Chroma
 from langchain_chroma import Chroma
@@ -36,14 +37,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 # 환경 변수에서 데이터 경로 로드
 ENV_RAW_PATH = os.getenv("DATA_DIC_PATH")
 ENV_SUMMARY_PATH = os.getenv("DATA_SUMMATION_PATH")
-_obsidian_root = os.getenv("OBSIDIAN_PATH")
-if _obsidian_root:
-    _obsidian_10 = str((Path(_obsidian_root) / "10_AI_Engineering").resolve())
-    _obsidian_11 = str((Path(_obsidian_root) / "11_RAG_Knowledge_Base").resolve())
-    if not ENV_RAW_PATH and os.path.isdir(_obsidian_10):
-        ENV_RAW_PATH = _obsidian_10
-    if not ENV_SUMMARY_PATH and os.path.isdir(_obsidian_11):
-        ENV_SUMMARY_PATH = _obsidian_11
+_obsidian_root = str(OBSIDIAN_ROOT) if isinstance(OBSIDIAN_ROOT, Path) else ""
+if not ENV_RAW_PATH and isinstance(RAW_DATA_DIR, Path) and RAW_DATA_DIR.exists():
+    ENV_RAW_PATH = str(RAW_DATA_DIR.resolve())
+if not ENV_SUMMARY_PATH and isinstance(SUMMARY_DATA_DIR, Path) and SUMMARY_DATA_DIR.exists():
+    ENV_SUMMARY_PATH = str(SUMMARY_DATA_DIR.resolve())
 
 # 🔧 CHROMA_DB_PATH: 절대경로 또는 프로젝트 기준 상대경로로 해석
 _raw_db = os.getenv("CHROMA_DB_PATH", "chroma_db")  # 기본값은 "chroma_db"
@@ -709,6 +707,7 @@ class IngestEngine:
             overlap: int,
             heading_levels: Set[int],
             code_attach: bool,
+            selected_files: Optional[List[str]] = None,
             callback: Optional[Callable[[str], None]] = None
     ) -> None:
 
@@ -730,11 +729,23 @@ class IngestEngine:
         if mode == "reset":
             logger.warning(f"🗑️ Reset job: {job.name}")
 
+        selected_rel = {
+            str(item).replace("\\", "/").strip("/")
+            for item in (selected_files or [])
+            if str(item).strip()
+        }
         files: List[Tuple[str, str]] = []
         for lyr, d in dirs:
             if not d or not os.path.exists(d):
                 continue
             for fp in self.scan_files(d):
+                if selected_rel:
+                    try:
+                        rel_fp = Path(fp).resolve().relative_to(Path(d).resolve()).as_posix()
+                    except Exception:
+                        continue
+                    if rel_fp not in selected_rel:
+                        continue
                 files.append((lyr, fp))
 
         if not files:
@@ -842,14 +853,16 @@ def run_ingest_logic(
         overlap: Optional[int] = None,
         heading_levels: Optional[List[int]] = None,
         code_attach: bool = False,
-        callback: Optional[Callable[[str], None]] = None  # <--- 'callback'으로 받음
+        input_dir: str = "",
+        output_dir: str = "",
+        selected_files: Optional[List[str]] = None,
+        callback: Optional[Callable[[str], None]] = None
 ) -> str:
-    # 내부 로그 함수
     def log(msg):
-        if callback: callback(msg)  # <--- 받은 'callback' 사용
+        if callback:
+            callback(msg)
 
-    logs: List[str] = []
-    log(f"🎬 Ingest start | job={job} | mode={mode}")
+    log(f"?? Ingest start | job={job} | mode={mode}")
 
     try:
         jobs, _ = load_jobs(jobs_yaml)
@@ -862,25 +875,41 @@ def run_ingest_logic(
         if heading_levels:
             try:
                 levels = {int(x) for x in heading_levels}
-            except:
+            except Exception:
                 pass
 
-        if job == "all":
+        selected_files = list(selected_files or [])
+        manual_override = bool(input_dir or output_dir or selected_files)
+
+        if manual_override:
+            base_job = jobs.get(job) if job != "all" else None
+            name_seed = base_job.name if base_job else (Path(input_dir or output_dir or "manual_selection").name or "manual_selection")
+            safe_name = re.sub(r"[^a-zA-Z0-9_\-]+", "_", name_seed).strip("_") or "manual_selection"
+            target_jobs = [JobSpec(
+                name=name_seed,
+                input_dir=resolve_env_path(input_dir) if input_dir else (base_job.input_dir if base_job else ""),
+                output_dir=resolve_env_path(output_dir) if output_dir else (base_job.output_dir if base_job else ""),
+                ingest_enabled=True,
+                default_layer=(base_job.default_layer if base_job else (layer or "both")),
+                collection_raw=(base_job.collection_raw if base_job and base_job.collection_raw else safe_name),
+                collection_summary=(base_job.collection_summary if base_job and base_job.collection_summary else "summary"),
+            )]
+        elif job == "all":
             target_jobs = list(jobs.values())
         else:
             if job not in jobs:
-                log(f"❌ Job not found: {job}")
-                return f"❌ Job not found: {job}"
+                log(f"? Job not found: {job}")
+                return f"? Job not found: {job}"
             target_jobs = [jobs[job]]
 
         if mode == "cleanup":
             deleted = engine.cleanup_ghosts(engine.pool._stores)
-            msg = f"🧹 Cleanup done. Deleted: {deleted}"
+            msg = f"?? Cleanup done. Deleted: {deleted}"
             log(msg)
             return msg
 
         for j in target_jobs:
-            log(f"🚀 Job: {j.name}")
+            log(f"?? Job: {j.name}")
             engine.ingest_job(
                 job=j,
                 mode=mode,
@@ -890,15 +919,16 @@ def run_ingest_logic(
                 overlap=ov,
                 heading_levels=levels,
                 code_attach=code_attach,
-                callback=callback  # <--- 여기서도 'callback' 변수를 전달해야 함 (progress_callback 아님!)
+                selected_files=selected_files,
+                callback=callback,
             )
 
-        log("✅ Ingest Done")
+        log("? Ingest Done")
         return "Done"
 
     except Exception as e:
         logger.exception("Ingest error")
-        log(f"❌ Error: {e}")
+        log(f"? Error: {e}")
         return f"Error: {e}"
 
 

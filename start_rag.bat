@@ -45,13 +45,11 @@ if not "%PY_MM%"=="3.12" (
 echo [INFO] Python: %PYTHON_EXE% ^(v%PY_MM%^)
 set "PYTHONIOENCODING=utf-8"
 
-set "BACKEND_PORT=8010"
+set "BACKEND_PORT=8011"
 set "FRONTEND_PORT=8502"
 set "BACKEND_URL=http://127.0.0.1:%BACKEND_PORT%"
 set "ENV_FILE=%~dp0.env"
-
-echo [1/2] Backend: %BACKEND_URL%
-start "RAG Backend" /D "%~dp0" "%PYTHON_EXE%" "%~dp0backend\main.py"
+set "BACKEND_TIMEOUT_SEC=90"
 
 echo [INFO] Sync .env BACKEND_URL/BACKEND_PORT
 powershell -NoProfile -Command ^
@@ -62,13 +60,43 @@ powershell -NoProfile -Command ^
   "$lines += 'BACKEND_PORT=%BACKEND_PORT%';" ^
   "Set-Content -Path $f -Value $lines -Encoding UTF8"
 
-timeout /t 2 >nul
+echo [1/2] Backend: %BACKEND_URL%
+powershell -NoProfile -Command ^
+  "$backendUrl='%BACKEND_URL%';" ^
+  "$backendScript='%~dp0backend\main.py';" ^
+  "$pythonExe='%PYTHON_EXE%';" ^
+  "$workdir='%~dp0';" ^
+  "$timeoutSec=%BACKEND_TIMEOUT_SEC%;" ^
+  "$healthy=$false;" ^
+  "try { $resp = Invoke-WebRequest -UseBasicParsing -Uri ($backendUrl + '/health') -TimeoutSec 3; if ($resp.StatusCode -eq 200) { $healthy=$true } } catch {}" ^
+  "if ($healthy) { Write-Host '[INFO] Backend already healthy. Reusing existing process.'; exit 0 }" ^
+  "$stale = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -match [regex]::Escape($backendScript) };" ^
+  "foreach ($proc in $stale) { Write-Host ('[INFO] Stopping stale backend PID ' + $proc.ProcessId); Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue }" ^
+  "Start-Process -FilePath $pythonExe -ArgumentList $backendScript -WorkingDirectory $workdir;" ^
+  "$deadline = (Get-Date).AddSeconds($timeoutSec);" ^
+  "while ((Get-Date) -lt $deadline) {" ^
+  "  try { $resp = Invoke-WebRequest -UseBasicParsing -Uri ($backendUrl + '/health') -TimeoutSec 3; if ($resp.StatusCode -eq 200) { Write-Host '[INFO] Backend ready.'; exit 0 } } catch {}" ^
+  "  Start-Sleep -Seconds 2" ^
+  "}" ^
+  "Write-Host '[ERROR] Backend did not become ready within timeout.';" ^
+  "exit 1"
+if errorlevel 1 (
+  echo [ERROR] Backend startup failed.
+  pause
+  exit /b 1
+)
 
 echo [2/2] Frontend: frontend/app.py
-start "RAG Frontend" /D "%~dp0" "%PYTHON_EXE%" -m streamlit run "%~dp0frontend\app.py" --server.port %FRONTEND_PORT%
+powershell -NoProfile -Command ^
+  "$frontendUrl='http://127.0.0.1:%FRONTEND_PORT%/_stcore/health';" ^
+  "$running=$false;" ^
+  "try { $resp = Invoke-WebRequest -UseBasicParsing -Uri $frontendUrl -TimeoutSec 3; if ($resp.StatusCode -eq 200) { $running=$true } } catch {}" ^
+  "if ($running) { Write-Host '[INFO] Frontend already healthy. Reusing existing process.'; exit 0 }" ^
+  "exit 1"
+if errorlevel 1 start "RAG Frontend" /D "%~dp0" "%PYTHON_EXE%" -m streamlit run "%~dp0frontend\app.py" --server.port %FRONTEND_PORT%
 
 echo ==========================================
 echo Launched. Open frontend and test.
 echo ==========================================
-timeout /t 2 >nul
+powershell -NoProfile -Command "Start-Sleep -Seconds 2" >nul
 exit /b 0

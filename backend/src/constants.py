@@ -5,7 +5,7 @@
 # ==========================================================
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
 DEFAULT_RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
-DEFAULT_LOCAL_LLM = "qwen2.5-coder:3b"
+DEFAULT_LOCAL_LLM = "qwen3.5:4b"
 DEFAULT_LOCAL_URL = "http://localhost:11434"
 
 # ==========================================================

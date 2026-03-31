@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-local-agent",
+  "name": "Obsidian Local Agent",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Current-note-aware local agent panel for FastAPI + Ollama backed chats.",
+  "author": "Codex",
+  "isDesktopOnly": false
+}

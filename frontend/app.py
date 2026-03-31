@@ -2,6 +2,7 @@
 import json
 import time
 import re
+import shutil
 import threading
 import queue
 import uuid
@@ -14,12 +15,16 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx
 # ==========================================================================
 # [ZONE 0] Configuration & Constants
 # ==========================================================================
-load_dotenv()
-
 BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent
+load_dotenv(dotenv_path=ROOT_DIR / ".env", override=True)
+
 PROJECTS_DIR = "./projects"
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "./obsidian_notes")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8011")
+OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH") or os.getenv("OBSIDIAN_PATH", "./obsidian_notes")
+OBSIDIAN_PLUGIN_ID = "obsidian-local-agent"
+OBSIDIAN_PLUGIN_BUILD_DIR = ROOT_DIR / "obsidian-plugin"
+OBSIDIAN_PLUGIN_DIST_FILES = ("manifest.json", "main.js", "styles.css", "versions.json")
 
 # ==========================================================================
 # [ZONE 1] Backend API Client (FastAPI 연동)
@@ -54,7 +59,7 @@ class BrainAPIClient:
         except Exception as e:
             return {"status": "error", "error": str(e)}
     
-    def chat_stream(self, query: str, project_name: str, model_name: str = "qwen2.5-coder:3b", history: str = ""):
+    def chat_stream(self, query: str, project_name: str, model_name: str = "qwen3.5:4b", history: str = ""):
         self.stop_signal = False
         self.thought_log = []
         self.session_id = str(uuid.uuid4())
@@ -122,7 +127,7 @@ class BrainAPIClient:
 def save_to_obsidian(title: str, content: str, folder: str = "AI_Answers") -> bool:
     """Save the response to an Obsidian vault markdown file."""
     try:
-        vault_path = Path(OBSIDIAN_VAULT_PATH)
+        vault_path = Path(st.session_state.get("obsidian_vault_path", OBSIDIAN_VAULT_PATH))
         save_dir = vault_path / folder
         save_dir.mkdir(parents=True, exist_ok=True)
         
@@ -148,6 +153,120 @@ tags: [ai-generated, rag-answer]
     except Exception as e:
         print(f"Obsidian 저장 실패: {e}")
         return False
+
+
+# ==========================================================================
+# [ZONE 1.6] Obsidian Plugin Utilities
+# ==========================================================================
+def default_plugin_settings() -> dict:
+    return {
+        "language": "ko",
+        "backendUrl": st.session_state.get("backend_url", BACKEND_URL),
+        "defaultProject": st.session_state.get("current_project") or "Default",
+        "saveFolder": "AI Answers",
+        "maxContextNotes": 6,
+        "sourceOpenMode": "split",
+        "splitDirection": "right",
+        "scopes": {
+            "links": True,
+            "folder": False,
+            "tags": False,
+            "backlinks": False,
+        },
+    }
+
+
+def merge_plugin_settings(settings: dict | None) -> dict:
+    merged = default_plugin_settings()
+    if not isinstance(settings, dict):
+        return merged
+
+    merged.update({k: v for k, v in settings.items() if k != "scopes"})
+    merged["scopes"] = {
+        **merged["scopes"],
+        **(settings.get("scopes") or {}),
+    }
+    return merged
+
+
+def get_vault_root() -> Path:
+    return Path(st.session_state.get("obsidian_vault_path", OBSIDIAN_VAULT_PATH))
+
+
+def get_plugin_dir() -> Path:
+    return get_vault_root() / ".obsidian" / "plugins" / OBSIDIAN_PLUGIN_ID
+
+
+def get_plugin_settings_path() -> Path:
+    return get_plugin_dir() / "data.json"
+
+
+def get_community_plugins_path() -> Path:
+    return get_vault_root() / ".obsidian" / "community-plugins.json"
+
+
+def plugin_build_ready() -> tuple[bool, list[str]]:
+    missing = [name for name in OBSIDIAN_PLUGIN_DIST_FILES if not (OBSIDIAN_PLUGIN_BUILD_DIR / name).exists()]
+    return (len(missing) == 0, missing)
+
+
+def load_plugin_settings_file() -> dict:
+    path = get_plugin_settings_path()
+    if not path.exists():
+        return default_plugin_settings()
+    try:
+        return merge_plugin_settings(json.loads(path.read_text(encoding="utf-8")))
+    except Exception:
+        return default_plugin_settings()
+
+
+def save_plugin_settings_file(settings: dict) -> None:
+    path = get_plugin_settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(merge_plugin_settings(settings), ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def is_plugin_enabled() -> bool:
+    path = get_community_plugins_path()
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return OBSIDIAN_PLUGIN_ID in data if isinstance(data, list) else False
+    except Exception:
+        return False
+
+
+def enable_plugin() -> None:
+    path = get_community_plugins_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    except Exception:
+        data = []
+    if not isinstance(data, list):
+        data = []
+    if OBSIDIAN_PLUGIN_ID not in data:
+        data.append(OBSIDIAN_PLUGIN_ID)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def deploy_obsidian_plugin() -> tuple[bool, str]:
+    build_ready, missing = plugin_build_ready()
+    if not build_ready:
+        return False, f"Missing build files: {', '.join(missing)}"
+
+    plugin_dir = get_plugin_dir()
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    for name in OBSIDIAN_PLUGIN_DIST_FILES:
+        shutil.copy2(OBSIDIAN_PLUGIN_BUILD_DIR / name, plugin_dir / name)
+
+    settings_path = get_plugin_settings_path()
+    if not settings_path.exists():
+        save_plugin_settings_file(default_plugin_settings())
+
+    enable_plugin()
+    return True, str(plugin_dir)
 
 
 # ==========================================================================
@@ -529,6 +648,112 @@ div[data-testid="stChatInput"] {
 .log-line.error { color: #f87171; }
 .log-line.info { color: #a78bfa; }
 
+/* Generator folder picker */
+.gen-folder-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 2px 10px 2px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 8px;
+}
+
+.gen-folder-summary {
+    font-size: 0.82rem;
+    color: #9ca3af;
+}
+
+.gen-folder-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    margin: 6px 0;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(19, 23, 34, 0.92) 0%, rgba(14, 17, 23, 0.96) 100%);
+}
+
+.gen-folder-name {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #e5e7eb;
+    line-height: 1.2;
+}
+
+.gen-folder-meta {
+    font-size: 0.76rem;
+    color: #93a4bd;
+}
+
+.gen-folder-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.12);
+    color: #d1d5db;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.gen-folder-files {
+    margin: 2px 0 12px 0;
+    padding: 2px 8px 8px 30px;
+    border-left: 1px solid rgba(96, 165, 250, 0.22);
+}
+
+.gen-section-head {
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #e5e7eb;
+    margin: 0;
+}
+
+.gen-section-bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 4px 0 10px 0;
+}
+
+.gen-link-button-wrap {
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+    min-height: 38px;
+    flex: 0 0 auto;
+}
+
+.gen-link-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: linear-gradient(180deg, #3a3a3a 0%, #2f2f2f 100%);
+    color: #f3f4f6 !important;
+    text-decoration: none !important;
+    font-size: 0.92rem;
+    font-weight: 500;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.gen-link-button:hover {
+    background: linear-gradient(180deg, #454545 0%, #363636 100%);
+    border-color: rgba(255,255,255,0.18);
+}
+
 /* 반응형 */
 @media (max-width: 1600px) {
     .analysis-panel { display: none !important; }
@@ -617,7 +842,10 @@ def init_all_session_states():
         },
         "current_stats": {"tps": 0, "time": 0},
         "show_gen_finish_alert": False,
-        "selected_model": "qwen2.5-coder:3b",
+        "selected_model": "qwen3.5:4b",
+        "backend_url": BACKEND_URL,
+        "obsidian_vault_path": OBSIDIAN_VAULT_PATH,
+        "last_sources": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -1000,10 +1228,143 @@ def render_compact_panel():
 
 
 # ==========================================================================
+# [ZONE 8.5] Operations Console
+# ==========================================================================
+def render_ops_console():
+    st.subheader("Operations Console")
+
+    brain = get_brain_client()
+    health = brain.check_health()
+    build_ready, missing_files = plugin_build_ready()
+    plugin_dir = get_plugin_dir()
+    plugin_settings = load_plugin_settings_file()
+    plugin_enabled = is_plugin_enabled()
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Backend", health.get("engine", health.get("status", "unknown")))
+    col2.metric("Plugin Build", "ready" if build_ready else "missing")
+    col3.metric("Plugin Installed", "yes" if plugin_dir.exists() else "no")
+    col4.metric("Plugin Enabled", "yes" if plugin_enabled else "no")
+
+    st.caption(f"Vault: {get_vault_root()}")
+    st.caption(f"Plugin dir: {plugin_dir}")
+
+    action_col1, action_col2, action_col3 = st.columns(3)
+    with action_col1:
+        if st.button("Deploy / Update Plugin", use_container_width=True):
+            ok, message = deploy_obsidian_plugin()
+            if ok:
+                st.success(f"Plugin deployed to {message}")
+                st.rerun()
+            st.error(message)
+    with action_col2:
+        if st.button("Enable Plugin", use_container_width=True, type="secondary"):
+            enable_plugin()
+            st.success("Plugin enabled in community-plugins.json")
+            st.rerun()
+    with action_col3:
+        if st.button("Refresh Ops", use_container_width=True, type="secondary"):
+            st.rerun()
+
+    if not build_ready:
+        st.warning(f"Plugin build is missing: {', '.join(missing_files)}")
+
+    with st.form("plugin-settings-form"):
+        st.markdown("##### Plugin Settings")
+        col1, col2 = st.columns(2)
+        language = col1.selectbox(
+            "Plugin language",
+            ["ko", "en"],
+            index=["ko", "en"].index(plugin_settings.get("language", "ko")),
+            format_func=lambda value: "한국어" if value == "ko" else "English",
+        )
+        backend_url = col1.text_input("Plugin backend URL", value=plugin_settings.get("backendUrl", BACKEND_URL))
+        default_project = col2.text_input("Plugin default project", value=plugin_settings.get("defaultProject", "Default"))
+        save_folder = col1.text_input("Plugin save folder", value=plugin_settings.get("saveFolder", "AI Answers"))
+        max_context = int(
+            col2.number_input(
+                "Max context notes",
+                min_value=1,
+                max_value=20,
+                value=int(plugin_settings.get("maxContextNotes", 6)),
+                step=1,
+            )
+        )
+        source_open_mode = col1.selectbox(
+            "Source open mode",
+            ["current", "split", "tab"],
+            index=["current", "split", "tab"].index(plugin_settings.get("sourceOpenMode", "split")),
+        )
+        split_direction = col2.selectbox(
+            "Split direction",
+            ["left", "right", "down"],
+            index=["left", "right", "down"].index(plugin_settings.get("splitDirection", "right")),
+        )
+
+        scopes = plugin_settings.get("scopes", {})
+        scope_col1, scope_col2, scope_col3, scope_col4 = st.columns(4)
+        links = scope_col1.checkbox("Links", value=bool(scopes.get("links", True)))
+        folder = scope_col2.checkbox("Folder", value=bool(scopes.get("folder", False)))
+        tags = scope_col3.checkbox("Tags", value=bool(scopes.get("tags", False)))
+        backlinks = scope_col4.checkbox("Backlinks", value=bool(scopes.get("backlinks", False)))
+
+        if st.form_submit_button("Save Plugin Settings", use_container_width=True):
+            save_plugin_settings_file(
+                {
+                    "language": language,
+                    "backendUrl": backend_url.strip() or BACKEND_URL,
+                    "defaultProject": default_project.strip() or "Default",
+                    "saveFolder": save_folder.strip() or "AI Answers",
+                    "maxContextNotes": max_context,
+                    "sourceOpenMode": source_open_mode,
+                    "splitDirection": split_direction,
+                    "scopes": {
+                        "links": links,
+                        "folder": folder,
+                        "tags": tags,
+                        "backlinks": backlinks,
+                    },
+                }
+            )
+            st.success("Plugin settings saved to data.json")
+            st.rerun()
+
+    st.markdown("##### Latest Retrieved Sources")
+    latest_sources = st.session_state.get("last_sources", [])
+    if latest_sources:
+        source_rows = [
+            {
+                "name": src.get("name") or Path(str(src.get("path", ""))).name,
+                "layer": src.get("layer", ""),
+                "score": f"{float(src.get('score', 0.0)):.3f}" if str(src.get("score", "")).strip() else "-",
+                "path": src.get("path", ""),
+            }
+            for src in latest_sources
+        ]
+        st.dataframe(source_rows, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No retrieved source list has been captured yet.")
+
+    log_sections = [
+        ("Chat Engine Logs", st.session_state.get("brain_logs", []), True),
+        ("Generator Logs", st.session_state.get("gen_logs", []), False),
+        ("Tagger Logs", st.session_state.get("tag_logs", []), False),
+        ("Ingest Logs", st.session_state.get("ingest_logs", []), False),
+    ]
+    for label, logs, expanded in log_sections:
+        with st.expander(label, expanded=expanded):
+            if logs:
+                st.code("\n".join(logs[-60:]))
+            else:
+                st.caption("No logs yet.")
+
+
+# ==========================================================================
 # [ZONE 9] Sidebar
 # ==========================================================================
 with st.sidebar:
-    st.title("Obsidian_Rag")
+    st.title("Obsidian RAG Ops")
+    st.caption("Obsidian plugin is the main client. Streamlit stays as the operations console and fallback UI.")
     # Prefer env-backed URL every run; migrate old session URLs (e.g. 8020) automatically.
     if (
         "backend_url" not in st.session_state
@@ -1011,19 +1372,35 @@ with st.sidebar:
     ):
         st.session_state.backend_url = BACKEND_URL
 
+    runtime_backend = st.text_input(
+        "Backend URL",
+        value=st.session_state.get("backend_url", BACKEND_URL),
+    ).strip()
+    if runtime_backend and runtime_backend != st.session_state.get("backend_url"):
+        st.session_state.backend_url = runtime_backend
+        st.session_state.brain = None
+
+    runtime_vault = st.text_input(
+        "Vault Path",
+        value=st.session_state.get("obsidian_vault_path", OBSIDIAN_VAULT_PATH),
+    ).strip()
+    if runtime_vault and runtime_vault != st.session_state.get("obsidian_vault_path"):
+        st.session_state.obsidian_vault_path = runtime_vault
+
+    st.caption(f"Plugin enabled: {'yes' if is_plugin_enabled() else 'no'}")
+
     # Model selection
     st.markdown("##### Model")
     # Ollama + OpenAI 모델 목록
     model_options = [
-        "qwen2.5:3b",
-        "qwen2.5-coder:3b",
-        "qwen2.5-coder:7b",
+        "qwen3.5:4b",
+
         "gpt-4o",
         "gpt-4-turbo",
         "gpt-5-mini",
         "gpt-5-nano",
     ]
-    current_selected_model = st.session_state.get("selected_model", "qwen2.5-coder:3b")
+    current_selected_model = st.session_state.get("selected_model", "qwen3.5:4b")
     selected_model_index = model_options.index(current_selected_model) if current_selected_model in model_options else 0
     selected_model = st.selectbox(
         "Model",
@@ -1129,7 +1506,7 @@ with st.sidebar:
 # [ZONE 10] Project Info Bar
 # ==========================================================================
 current_proj = st.session_state.get("current_project", "Default_Chat")
-current_model = st.session_state.get("selected_model", "qwen2.5-coder:3b")
+current_model = st.session_state.get("selected_model", "qwen3.5:4b")
 
 st.markdown(f"""
     <div class="fixed-project-info">
@@ -1142,13 +1519,21 @@ st.markdown(f"""
 # ==========================================================================
 # [ZONE 11] Main Tabs
 # ==========================================================================
-tab_chat, tab_gen, tab_tag, tab_ingest = st.tabs(["💬 Chat", "🏭 Generator", "🏷️ Tagger", "📥 Ingest"])
+tab_ops, tab_chat, tab_gen, tab_tag, tab_ingest = st.tabs(["🛠 Ops", "💬 Legacy Chat", "🏭 Generator", "🏷️ Tagger", "📥 Ingest"])
 
 
 # ==========================================================================
-# [Tab 1] Chat Interface
+# [Tab 1] Operations
+# ==========================================================================
+with tab_ops:
+    render_ops_console()
+
+
+# ==========================================================================
+# [Tab 2] Chat Interface
 # ==========================================================================
 with tab_chat:
+    st.caption("Primary daily usage is expected inside the Obsidian plugin. Use this tab for fallback chat and debugging.")
     chat_container = st.container()
     panel_placeholder = st.empty()
     panel_placeholder.markdown(render_compact_panel(), unsafe_allow_html=True)
@@ -1181,6 +1566,7 @@ with tab_chat:
     # 채팅 입력
     if prompt := st.chat_input("질문을 입력하세요...", disabled=st.session_state.is_generating):
         st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.last_sources = []
         
         with chat_container:
             with st.chat_message("user"):
@@ -1315,7 +1701,7 @@ with tab_chat:
                     for update in brain.chat_stream(
                         query=prompt,
                         project_name=st.session_state.current_project,
-                        model_name=st.session_state.get("selected_model", "qwen2.5-coder:3b"),
+                        model_name=st.session_state.get("selected_model", "qwen3.5:4b"),
                         history=history_text  # 히스토리 전달
                     ):
                         if brain.stop_signal:
@@ -1327,6 +1713,7 @@ with tab_chat:
                         logs = update.get('logs', [])
                         state = update.get('state', {})
                         metrics = update.get('metrics', {})
+                        sources = update.get('sources', [])
 
                         if answer:
                             full_response = answer
@@ -1355,6 +1742,9 @@ with tab_chat:
                                 "raw_docs": state.get('raw_docs', []),
                                 "answer": state.get('answer', ''),
                             }
+
+                        if sources:
+                            st.session_state.last_sources = sources
                         
                         # 메트릭 업데이트
                         if metrics:
@@ -1426,6 +1816,11 @@ with tab_chat:
 # ==========================================================================
 with tab_gen:
     st.subheader("🏭 AI 지식 생성기 (Generator)")
+
+    if st.query_params.get("reload_generator_settings") == "1":
+        st.cache_data.clear()
+        del st.query_params["reload_generator_settings"]
+        st.rerun()
 
     config = load_combined_config()
     system_config = config.get("system", {})
@@ -1503,7 +1898,7 @@ with tab_gen:
         st.progress(prog_val / 100)
 
     model_options_gen = list(model_config.keys()) if model_config else [
-        "qwen2.5-coder:3b", "qwen2.5-coder:7b", "gpt-4o", "gpt-4-turbo"
+        "qwen3.5:4b", "gpt-4o", "gpt-4-turbo"
     ]
     selected_job = st.selectbox(
         "작업 템플릿",
@@ -1543,7 +1938,7 @@ with tab_gen:
         "input": default_input_dir,
         "output": default_output_dir,
         "subject": "New Project",
-        "model": defaults_cfg.get("model", st.session_state.get("selected_model", "qwen2.5-coder:3b")),
+        "model": defaults_cfg.get("model", st.session_state.get("selected_model", "qwen3.5:4b")),
         "temp": float(defaults_cfg.get("temperature", 0.1)),
     }
     target_job = next((j for j in jobs_list if j.get("name") == selected_job), {}) if selected_job != "직접 설정" else {}
@@ -1574,39 +1969,96 @@ with tab_gen:
             from collections import defaultdict
             folder_map = defaultdict(list)
             for rel in files:
-                folder = rel.split(os.sep)[0] if os.sep in rel else "(루트)"
+                folder = rel.split(os.sep)[0] if os.sep in rel else "(???)"
                 folder_map[folder].append(rel)
 
+            st.markdown(
+                (
+                    '<div class="gen-folder-toolbar">'
+                    f'<div><strong>?? {len(folder_map)}?</strong></div>'
+                    f'<div class="gen-folder-summary">?? {len(files)}?</div>'
+                    '</div>'
+                ),
+                unsafe_allow_html=True,
+            )
+
             for folder, f_list in sorted(folder_map.items()):
-                with st.expander(f"{folder} ({len(f_list)})", expanded=False):
-                    folder_key = folder.replace("\\", "_").replace("/", "_")
-                    select_all_key = f"all_{folder_key}"
+                folder_key = folder.replace("\\", "_").replace("/", "_")
+                select_all_key = f"all_{folder_key}"
+                expanded_key = f"folder_open_{folder_key}"
 
-                    def toggle_folder_state(toggle_key, file_list):
-                        checked = st.session_state.get(toggle_key, False)
-                        for f in file_list:
-                            st.session_state[f"chk_{f}"] = checked
+                if expanded_key not in st.session_state:
+                    st.session_state[expanded_key] = False
 
+                selected_in_folder = 0
+                for f in f_list:
+                    file_key = f"chk_{f}"
+                    if file_key not in st.session_state:
+                        st.session_state[file_key] = False
+                    if st.session_state[file_key]:
+                        selected_in_folder += 1
+
+                def toggle_folder_state(toggle_key, file_list):
+                    checked = st.session_state.get(toggle_key, False)
+                    for item in file_list:
+                        st.session_state[f"chk_{item}"] = checked
+
+                row_cols = st.columns([0.7, 6.8, 1.0, 1.2], vertical_alignment="center")
+                with row_cols[0]:
+                    if st.button(
+                        "?" if st.session_state[expanded_key] else "?",
+                        key=f"toggle_{folder_key}",
+                        disabled=is_working,
+                        use_container_width=True,
+                    ):
+                        st.session_state[expanded_key] = not st.session_state[expanded_key]
+                        st.rerun()
+
+                with row_cols[1]:
+                    st.markdown(
+                        (
+                            '<div class="gen-folder-row">'
+                            '<div>'
+                            f'<div class="gen-folder-name">{folder}</div>'
+                            f'<div class="gen-folder-meta">?? {selected_in_folder}/{len(f_list)}</div>'
+                            '</div>'
+                            f'<div class="gen-folder-badge">{len(f_list)}</div>'
+                            '</div>'
+                        ),
+                        unsafe_allow_html=True,
+                    )
+
+                with row_cols[2]:
+                    st.caption(f"{selected_in_folder}/{len(f_list)}")
+
+                with row_cols[3]:
                     st.checkbox(
-                        f"'{folder}' 전체 선택",
+                        "??",
                         key=select_all_key,
                         on_change=toggle_folder_state,
                         args=(select_all_key, f_list),
-                        disabled=is_working
+                        disabled=is_working,
+                        label_visibility="collapsed"
                     )
+
+                if st.session_state[expanded_key]:
+                    st.markdown('<div class="gen-folder-files">', unsafe_allow_html=True)
                     for f in f_list:
                         file_key = f"chk_{f}"
-                        if file_key not in st.session_state:
-                            st.session_state[file_key] = False
                         if st.checkbox(f, key=file_key, disabled=is_working):
+                            selected_files.append(f)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                else:
+                    for f in f_list:
+                        if st.session_state.get(f"chk_{f}", False):
                             selected_files.append(f)
 
             if selected_files:
                 total_bytes = sum(os.path.getsize(os.path.join(real_path, f)) for f in selected_files)
                 est_tokens = total_bytes // 3
-                st.caption(f"{len(selected_files)}개 파일 선택 | 예상 입력 토큰: 약 {est_tokens:,}")
+                st.caption(f"{len(selected_files)}????? ??? | ??? ??? ???: ??{est_tokens:,}")
             else:
-                st.caption("선택된 파일 없음")
+                st.caption("???????? ???")
         else:
             if real_path and not files:
                 st.info(f"입력 경로는 존재하지만 지원 파일(.md/.txt/.py)이 없습니다: {real_path}")
@@ -1626,46 +2078,54 @@ with tab_gen:
         else:
             st.session_state.gen_selected_patterns = []
 
-    with st.expander("2) 상세 설정", expanded=False):
-        c_out, c_mod, c_tmp = st.columns([2, 1, 1])
-        out_dir = c_out.text_input("출력 경로", defaults["output"], disabled=is_working)
-        model_idx = model_options_gen.index(defaults["model"]) if defaults["model"] in model_options_gen else 0
-        sel_model = c_mod.selectbox("사용 모델", model_options_gen, index=model_idx, disabled=is_working)
-        sel_temp = c_tmp.slider("온도", 0.0, 1.0, float(defaults["temp"]), disabled=is_working)
-        st.divider()
+    st.markdown(
+        '<div class="gen-section-bar">'
+        '<div class="gen-section-head">2) 프롬프트와 출력 설정</div>'
+        '<div class="gen-link-button-wrap">'
+        '<a class="gen-link-button" href="?reload_generator_settings=1">설정 다시 불러오기</a>'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-        def on_target_set_change():
-            selected_set = st.session_state.gen_target_set
-            if selected_set != "직접 선택":
-                st.session_state.gen_selected_patterns = target_sets.get(selected_set, [])
+    c_out, c_mod, c_tmp = st.columns([2, 1, 1])
+    out_dir = c_out.text_input("?? ??", defaults["output"], disabled=is_working)
+    model_idx = model_options_gen.index(defaults["model"]) if defaults["model"] in model_options_gen else 0
+    sel_model = c_mod.selectbox("??", model_options_gen, index=model_idx, disabled=is_working)
+    sel_temp = c_tmp.slider("??", 0.0, 1.0, float(defaults["temp"]), disabled=is_working)
+    st.divider()
 
-        set_names = ["직접 선택"] + list(target_sets.keys())
-        st.selectbox(
-            "타깃 세트",
-            set_names,
-            key="gen_target_set",
-            on_change=on_target_set_change,
-            disabled=is_working
-        )
+    def on_target_set_change():
+        selected_set = st.session_state.gen_target_set
+        if selected_set != "?? ??":
+            st.session_state.gen_selected_patterns = target_sets.get(selected_set, [])
 
-        patterns = st.multiselect(
-            "적용 패턴",
-            options=list(pattern_config.keys()),
-            key="gen_selected_patterns",
-            disabled=is_working
-        )
+    set_names = ["?? ??"] + list(target_sets.keys())
+    st.selectbox(
+        "?? ??",
+        set_names,
+        key="gen_target_set",
+        on_change=on_target_set_change,
+        disabled=is_working
+    )
 
-        if patterns:
-            with st.expander("선택 패턴 미리보기", expanded=False):
-                for p_key in patterns:
-                    p_data = pattern_config.get(p_key, {})
-                    if not isinstance(p_data, dict):
-                        p_data = {"prompt_template": str(p_data)}
-                    st.markdown(f"**[{p_key}]**")
-                    if p_data.get("system_role"):
-                        st.text_area("System", p_data["system_role"], height=70, disabled=True, key=f"v_sys_{p_key}")
-                    st.text_area("User", p_data.get("prompt_template", ""), height=100, disabled=True, key=f"v_usr_{p_key}")
+    patterns = st.multiselect(
+        "?? ??",
+        options=list(pattern_config.keys()),
+        key="gen_selected_patterns",
+        disabled=is_working
+    )
 
+    if patterns:
+        with st.expander("?? ?? ????", expanded=False):
+            for p_key in patterns:
+                p_data = pattern_config.get(p_key, {})
+                if not isinstance(p_data, dict):
+                    p_data = {"prompt_template": str(p_data)}
+                st.markdown(f"**[{p_key}]**")
+                if p_data.get("system_role"):
+                    st.text_area("System", p_data["system_role"], height=70, disabled=True, key=f"v_sys_{p_key}")
+                st.text_area("User", p_data.get("prompt_template", ""), height=100, disabled=True, key=f"v_usr_{p_key}")
     if st.button("지식 생성 시작", type="primary", use_container_width=True, disabled=is_working):
         if (selected_job != "직접 설정") or (selected_files and patterns):
             st.session_state.is_generating = True
@@ -1817,6 +2277,7 @@ with tab_ingest:
         st.info(st.session_state.ingest_status)
         time.sleep(1.2)
         st.rerun()
+
 
 
 
